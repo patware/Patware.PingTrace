@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.DirectoryServices.Protocols" Version="10.0.13" />
+    <PackageReference Include="System.DirectoryServices.Protocols" Version="10.0.14" />
   </ItemGroup>
 
 </Project>

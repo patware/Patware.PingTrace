@@ -7,6 +7,8 @@ published releases are identified by package and release date below.
 
 ### Changed
 
+- Update versions of NuGet package reference
+
 ### Added
 
 ## 0.2.0 - 2026.10.15
