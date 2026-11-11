@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using PingTrace.Core;
 using PingTrace.Runtime;
@@ -73,11 +74,12 @@ public static class HttpClientExtensions
 
         builder.Services.AddScoped<IPingTraceConnector>(provider =>
             new HttpPingTraceConnector(
-                name,
-                provider.GetRequiredService<IHttpClientFactory>(),
-                httpClientName,
-                tracePath,
-                traceAllPath));
+                name: name,
+                clientFactory: provider.GetRequiredService<IHttpClientFactory>(),
+                httpClientName: httpClientName,
+                tracePath: tracePath,
+                traceAllPath: traceAllPath,
+                logger: provider.GetRequiredService<ILogger<HttpPingTraceConnector>>()));
 
         return httpClientBuilder;
     }
@@ -89,7 +91,7 @@ public static class HttpClientExtensions
         // A single leading slash is a supported HTTP path rooted at the
         // configured server. On Unix, UriKind.Absolute can instead classify
         // it as a file URI, so exclude that form from the absolute-URI check.
-        bool isRootRelativePath = path.StartsWith("/", StringComparison.Ordinal);
+        bool isRootRelativePath = path.StartsWith('/');
 
         if (path.StartsWith("//", StringComparison.Ordinal) ||
             path.Contains('\\') ||

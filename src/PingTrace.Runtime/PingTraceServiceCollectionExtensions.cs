@@ -27,10 +27,16 @@ public static class PingTraceServiceCollectionExtensions
     /// The callback executes during registration, before the service
     /// provider is built. An existing IPingTrace registration is preserved.
     /// Omitting the callback registers a default leaf implementation.
+    ///
+    /// Logging services are registered so connectors can report original
+    /// exceptions when returning failed diagnostics. The application controls
+    /// logging providers, filtering, and retention.
     /// </remarks>
     public static IServiceCollection AddPingTrace(this IServiceCollection services, Action<PingTraceBuilder>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(services);
+
+        services.AddLogging();
 
         services.TryAddSingleton<TraceAllNode>();
         services.TryAddScoped<IPingTrace, DefaultPingTrace>();

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using PingTrace.Core;
 using PingTrace.Runtime;
@@ -50,8 +51,9 @@ public static class EntityFrameworkExtensions
 
         builder.Services.AddScoped<IPingTraceConnector>(provider =>
             new DbContextPingTraceConnector<TContext>(
-                name,
-                () => provider.GetRequiredService<TContext>()));
+                name: name,
+                resolveContext: () => provider.GetRequiredService<TContext>(),
+                logger: provider.GetRequiredService<ILogger<DbContextPingTraceConnector<TContext>>>()));
 
         return builder;
     }

@@ -76,9 +76,7 @@ public static class PingTraceEndpointRouteBuilderExtensions
         }
     }
 
-    private static async Task<IResult> HandleTraceAllAsync(
-        HttpContext context,
-        [FromServices] IPingTrace pingTrace)
+    private static async Task<IResult> HandleTraceAllAsync(HttpContext context, [FromServices] IPingTrace pingTrace)
     {
         IReadOnlyList<TraceResult> results = await pingTrace.TraceAllAsync(cancellationToken: context.RequestAborted);
 

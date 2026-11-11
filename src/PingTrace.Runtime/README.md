@@ -241,6 +241,17 @@ For destination requests:
 If a connector throws an exception, the runtime propagates it without
 returning the accumulated results.
 
+A result with `Status = Failed` is returned normally and does not stop later
+destinations from being traced while the deadline permits. Each result describes
+its own operation; the local application's status is not an aggregate health
+verdict for its dependencies.
+
+`AddPingTrace` registers logging services. Built-in connectors log each locally
+generated failure at Warning level with its destination, error code, and message,
+and attach handled exceptions. Caller cancellation is not logged as a destination
+failure. The host owns logging providers, filtering, and retention; logging
+registration alone does not store logs.
+
 The runtime does not translate exceptions into HTTP status codes. That
 responsibility belongs to the hosting integration.
 

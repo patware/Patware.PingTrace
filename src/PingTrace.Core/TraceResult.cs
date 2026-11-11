@@ -3,52 +3,56 @@ using System;
 namespace PingTrace.Core;
 
 /// <summary>
-/// Describes a traced application or dependency, including its identity,
-/// diagnostic payload, and execution timing.
+/// Describes a diagnostic operation, its outcome, collected evidence,
+/// and execution timing.
 /// </summary>
 /// <remarks>
-/// The producer supplies the descriptive fields and calls
-/// <see cref="Finish(string)"/> when its diagnostic work completes.
-/// Parent timings may include dependency execution, so durations from
-/// multiple results can overlap.
+/// Producers complete an operation with Finish or Fail.
+/// A successful result confirms only the operation performed; it does
+/// not establish that the destination matches an expected environment.
+///
+/// Properties remain writable to support the existing result model
+/// and HTTP serialization. Consumers should treat remote results as
+/// externally supplied data.
+///
+/// Parent timings may include dependency execution, so durations
+/// from multiple results can overlap.
 /// </remarks>
 public class TraceResult
 {
     /// <summary>
-    /// Initializes a result with <see cref="StartedAt"/> set to the
-    /// current local time.
+    /// Initializes a result with the current local start time.
     /// </summary>
     public TraceResult()
     {
-        this.StartedAt = DateTime.Now;
+        StartedAt = DateTime.Now;
     }
 
     /// <summary>
-    /// Gets or sets the name identifying the traced application or dependency.
+    /// Gets or sets the application or dependency name.
     /// </summary>
-    public string Name { get; set; }
+    public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the identity reported for the traced operation.
-    /// </summary>
-    /// <remarks>
-    /// Its meaning depends on the producer. It may represent a process
-    /// identity, a database login, or an application-configured identity label.
-    /// </remarks>
-    public string Identity { get; set; }
-
-    /// <summary>
-    /// Gets or sets the machine, server, or host reported by the producer.
+    /// Gets or sets the identity associated with the operation.
     /// </summary>
     /// <remarks>
-    /// Local application traces use <see cref="Environment.MachineName"/>.
-    /// Dependency adapters may report the destination server or host instead.
+    /// Connectors should document whether this value is configured
+    /// locally or reported by the destination.
     /// </remarks>
-    public string MachineName { get; set; }
+    public string Identity { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the start timestamp, initialized to the current local
-    /// time when the result is constructed.
+    /// Gets or sets the machine, server, or host associated with the operation.
+    /// </summary>
+    /// <remarks>
+    /// A configured endpoint is not proof of the responding server's
+    /// identity. Connectors should document the source of this value.
+    /// </remarks>
+    public string MachineName { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the start timestamp.
     /// </summary>
     public DateTime StartedAt { get; set; }
 
@@ -56,48 +60,112 @@ public class TraceResult
     /// Gets or sets the completion timestamp.
     /// </summary>
     /// <remarks>
-    /// Call <see cref="Finish(string)"/> after the diagnostic work and any
-    /// included dependency calls complete. Until assigned, this property
-    /// retains the default <see cref="DateTime"/> value.
+    /// This remains the default value until completion is recorded.
     /// </remarks>
     public DateTime FinishedAt { get; set; }
 
     /// <summary>
-    /// Gets or sets the diagnostic payload supplied by the producer.
+    /// Gets or sets diagnostic evidence supplied by the producer.
     /// </summary>
     /// <remarks>
-    /// The payload format depends on the producer. It may contain plain
-    /// text or serialized diagnostic data.
+    /// The payload may contain text or serialized diagnostic data.
+    /// Evidence collected before a failure can remain available.
     /// </remarks>
-    public string Payload { get; set; }
+    public string Payload { get; set; } = string.Empty;
 
     /// <summary>
-    /// Stores the diagnostic payload and records the current local time
-    /// as the completion timestamp.
+    /// Gets or sets the explicitly reported outcome.
     /// </summary>
-    /// <param name="payload">
-    /// The diagnostic payload to store.
-    /// </param>
+    public TraceStatus Status { get; set; } = TraceStatus.Unknown;
+
+    /// <summary>
+    /// Gets or sets the classification of a reported failure.
+    /// </summary>
+    public TraceFailureKind FailureKind { get; set; } = TraceFailureKind.None;
+
+    /// <summary>
+    /// Gets or sets the connector-defined failure code.
+    /// </summary>
     /// <remarks>
-    /// Calling this method again replaces both the payload and completion
-    /// timestamp. It does not change <see cref="StartedAt"/>.
+    /// Codes should remain stable and independent of message wording.
+    /// For example, Redis.PingTimeout identifies a particular failure.
+    /// This value is empty when no failure has been reported.
+    /// </remarks>
+    public string ErrorCode { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets a human-readable explanation of the failure.
+    /// </summary>
+    /// <remarks>
+    /// Explain the observed failure without claiming an unverified cause.
+    /// Do not include credentials, connection strings, or unfiltered
+    /// exception messages.
+    /// </remarks>
+    public string Message { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Records successful completion and its diagnostic payload.
+    /// </summary>
+    /// <param name="payload">The collected diagnostic evidence.</param>
+    /// <remarks>
+    /// Repeated completion replaces the previous outcome.
+    /// Failure details are cleared to keep the result consistent.
+    /// Identity, machine name, and start time are preserved.
     /// </remarks>
     public void Finish(string payload)
     {
-        this.Payload = payload;
-        this.FinishedAt = DateTime.Now;
+        Payload = payload;
+        Status = TraceStatus.Succeeded;
+        FailureKind = TraceFailureKind.None;
+        ErrorCode = string.Empty;
+        Message = string.Empty;
+        FinishedAt = DateTime.Now;
     }
 
     /// <summary>
-    /// Gets the difference between the completion and start timestamps.
+    /// Records failed completion while preserving collected evidence.
+    /// </summary>
+    /// <param name="failureKind">The observed failure classification.</param>
+    /// <param name="errorCode">A stable, connector-defined failure code.</param>
+    /// <param name="message">A safe explanation of the observed failure.</param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The classification is undefined or is None.
+    /// </exception>
+    /// <exception cref="ArgumentNullException">
+    /// The error code or message is null.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// The error code or message is empty or whitespace.
+    /// </exception>
+    /// <remarks>
+    /// Preserving payload and identity metadata makes partial evidence
+    /// available even when the diagnostic operation fails.
+    /// Cancellation should propagate rather than be recorded as a
+    /// destination failure.
+    /// </remarks>
+    public void Fail(TraceFailureKind failureKind, string errorCode, string message)
+    {
+        if (!Enum.IsDefined(typeof(TraceFailureKind), failureKind) || failureKind == TraceFailureKind.None)
+        {
+            throw new ArgumentOutOfRangeException(nameof(failureKind));
+        }
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(errorCode);
+        ArgumentException.ThrowIfNullOrWhiteSpace(message);
+
+        Status = TraceStatus.Failed;
+        FailureKind = failureKind;
+        ErrorCode = errorCode;
+        Message = message;
+        FinishedAt = DateTime.Now;
+    }
+
+    /// <summary>
+    /// Gets the interval between the recorded start and completion times.
     /// </summary>
     /// <remarks>
-    /// Read this property after completion. It subtracts the recorded
-    /// timestamps without validating them and does not measure a running
-    /// duration. Wall-clock adjustments can affect the result.
+    /// Read after completion. This preserves the existing wall-clock
+    /// timing behavior and does not measure a running duration.
     /// </remarks>
-    public TimeSpan Elapsed
-    {
-        get { return FinishedAt - StartedAt; }
-    }
+    public TimeSpan Elapsed => FinishedAt - StartedAt;
 }

@@ -1,6 +1,7 @@
 using AspireAppSample.Web;
 using AspireAppSample.Web.Components;
 
+using PingTrace.Adapater.RedisCache;
 using PingTrace.Adapter.HttpClient;
 using PingTrace.AspNetCore;
 using PingTrace.Runtime;
@@ -35,6 +36,7 @@ builder.Services.AddPingTrace(pingTrace =>
     .RemoveAllResilienceHandlers();
 #pragma warning restore EXTEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 
+    pingTrace.AddRedisCacheDestination("RedisCache");
 });
 
 var app = builder.Build();

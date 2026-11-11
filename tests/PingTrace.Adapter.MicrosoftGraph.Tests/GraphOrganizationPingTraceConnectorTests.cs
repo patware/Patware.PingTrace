@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using PingTrace.Tests;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -6,7 +8,6 @@ using FluentAssertions;
 
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Graph;
-using Microsoft.Graph.Models.ODataErrors;
 using Microsoft.Kiota.Abstractions.Authentication;
 
 using PingTrace.Core;
@@ -91,6 +92,7 @@ public sealed class GraphOrganizationPingTraceConnectorTests
         results.Should().HaveCount(2);
 
         TraceResult dependency = results[1];
+        dependency.Status.Should().Be(TraceStatus.Succeeded);
         dependency.Name.Should().Be("MicrosoftGraph");
         dependency.MachineName.Should().Be("graph.test");
         dependency.Identity.Should().Be(Identity);
@@ -152,9 +154,10 @@ public sealed class GraphOrganizationPingTraceConnectorTests
     [DataRow(401)]
     [DataRow(403)]
     [DataRow(503)]
-    public async Task FailedRead_PropagatesGraphError(int statusCode)
+    public async Task FailedRead_ReturnsStructuredFailure(int statusCode)
     {
         // Arrange
+        using CapturingLoggerProvider logs = new();
         const string errorJson = """
             {
               "error": {
@@ -167,21 +170,31 @@ public sealed class GraphOrganizationPingTraceConnectorTests
         using ServiceProvider provider = CreateProvider((_, _) =>
             Task.FromResult(JsonResponse(
                 errorJson,
-                (HttpStatusCode)statusCode)));
+                (HttpStatusCode)statusCode)), logs);
 
         using IServiceScope scope = provider.CreateScope();
         IPingTrace sut = scope.ServiceProvider.GetRequiredService<IPingTrace>();
 
         // Act
-        Func<Task> act = () => sut.TraceAsync(
+        IReadOnlyList<TraceResult> results = await sut.TraceAsync(
             "MicrosoftGraph",
             TestContext.CancellationToken);
 
         // Assert
-        var assertion = await act.Should().ThrowAsync<ODataError>();
-
-        assertion.Which.ResponseStatusCode.Should().Be(statusCode);
-        assertion.Which.Error!.Code.Should().Be("SimulatedFailure");
+        results.Should().HaveCount(2);
+        TraceResult failure = results[1];
+        failure.Status.Should().Be(TraceStatus.Failed);
+        failure.FailureKind.Should().Be(statusCode == 401
+            ? TraceFailureKind.Authentication
+            : statusCode == 403 ? TraceFailureKind.Authorization : TraceFailureKind.RemoteError);
+        failure.ErrorCode.Should().Be($"Graph.Http.{statusCode}");
+        failure.Message.Should().Be($"The Graph organization request returned HTTP {statusCode}.");
+        failure.Payload.Should().BeEmpty();
+        logs.Warnings.Should().ContainSingle();
+        var error = logs.Warnings.Single().Exception.Should()
+            .BeOfType<Microsoft.Graph.Models.ODataErrors.ODataError>().Subject;
+        error.ResponseStatusCode.Should().Be(statusCode);
+        error.Error!.Code.Should().Be("SimulatedFailure");
     }
 
     /// <summary>
@@ -204,16 +217,19 @@ public sealed class GraphOrganizationPingTraceConnectorTests
         IPingTrace sut = scope.ServiceProvider.GetRequiredService<IPingTrace>();
 
         // Act
-        Func<Task> act = () => sut.TraceAsync(
+        IReadOnlyList<TraceResult> results = await sut.TraceAsync(
             "MicrosoftGraph",
             TestContext.CancellationToken);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        results[1].Status.Should().Be(TraceStatus.Failed);
+        results[1].FailureKind.Should().Be(TraceFailureKind.InvalidResponse);
+        results[1].Message.Should().NotBeNullOrWhiteSpace();
+        results[1].ErrorCode.Should().BeOneOf("Graph.InvalidOrganizationCount", "Graph.InvalidOrganizationId");
     }
 
     /// <summary>
-    /// Verifies that malformed JSON remains a deserialization failure.
+    /// Verifies that malformed JSON becomes an invalid-response diagnostic result.
     /// </summary>
     [TestMethod]
     public async Task MalformedJson_IsRejected()
@@ -226,12 +242,15 @@ public sealed class GraphOrganizationPingTraceConnectorTests
         IPingTrace sut = scope.ServiceProvider.GetRequiredService<IPingTrace>();
 
         // Act
-        Func<Task> act = () => sut.TraceAsync(
+        IReadOnlyList<TraceResult> results = await sut.TraceAsync(
             "MicrosoftGraph",
             TestContext.CancellationToken);
 
         // Assert
-        await act.Should().ThrowAsync<JsonException>();
+        results[1].Status.Should().Be(TraceStatus.Failed);
+        results[1].FailureKind.Should().Be(TraceFailureKind.InvalidResponse);
+        results[1].Message.Should().NotBeNullOrWhiteSpace();
+        results[1].ErrorCode.Should().Be("Graph.InvalidJson");
     }
 
     /// <summary>
@@ -318,10 +337,43 @@ public sealed class GraphOrganizationPingTraceConnectorTests
         response!.Value.Should().HaveCount(1);
     }
 
+    /// <summary>Verifies invalid client configuration fails before issuing an HTTP request.</summary>
+    [TestMethod]
+    public async Task InvalidBaseUrl_ReturnsConfigurationFailureWithoutRequest()
+    {
+        // Arrange
+        using CapturingLoggerProvider logs = new();
+        int calls = 0;
+        using ServiceProvider provider = CreateProvider((_, _) =>
+        {
+            calls++;
+            return Task.FromResult(JsonResponse(OrganizationJson));
+        }, logs);
+        using IServiceScope scope = provider.CreateScope();
+        scope.ServiceProvider.GetRequiredService<GraphServiceClient>().RequestAdapter.BaseUrl = "relative-path";
+        IPingTrace sut = scope.ServiceProvider.GetRequiredService<IPingTrace>();
+
+        // Act
+        IReadOnlyList<TraceResult> results = await sut.TraceAsync("MicrosoftGraph", TestContext.CancellationToken);
+
+        // Assert
+        calls.Should().Be(0);
+        results[1].Status.Should().Be(TraceStatus.Failed);
+        results[1].FailureKind.Should().Be(TraceFailureKind.Configuration);
+        results[1].ErrorCode.Should().Be("Graph.InvalidBaseUrl");
+        logs.Warnings.Should().ContainSingle();
+        logs.Warnings.Single().Exception.Should().BeNull();
+    }
+
     private static ServiceProvider CreateProvider(
-        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send)
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send,
+        CapturingLoggerProvider? logs = null)
     {
         ServiceCollection services = new();
+        if (logs is not null)
+        {
+            services.AddLogging(builder => builder.AddProvider(logs));
+        }
 
         services.AddSingleton<System.Net.Http.HttpClient>(_ => new System.Net.Http.HttpClient(new StubHandler(send)));
 

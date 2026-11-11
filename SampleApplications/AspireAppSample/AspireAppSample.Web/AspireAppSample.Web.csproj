@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\..\src\PingTrace.Adapater.RedisCache\PingTrace.Adapater.RedisCache.csproj" />
     <ProjectReference Include="..\..\..\src\PingTrace.Adapter.HttpClient\PingTrace.Adapter.HttpClient.csproj" />
     <ProjectReference Include="..\..\..\src\PingTrace.AspNetCore\PingTrace.AspNetCore.csproj" />
     <ProjectReference Include="..\..\..\src\PingTrace.Runtime\PingTrace.Runtime.csproj" />

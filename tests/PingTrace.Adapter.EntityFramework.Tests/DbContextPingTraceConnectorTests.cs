@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using PingTrace.Tests;
 using System.Data;
 using System.Data.Common;
 
@@ -64,6 +66,7 @@ public sealed class DbContextPingTraceConnectorTests
 
         results.Should().HaveCount(2);
         results[0].Name.Should().NotBeNullOrWhiteSpace();
+        results[1].Status.Should().Be(TraceStatus.Succeeded);
         results[1].Name.Should().Be("Database");
         results[1].MachineName.Should().Be(@"TestServer\TestInstance");
         results[1].Identity.Should().Be("TestLogin");
@@ -73,36 +76,38 @@ public sealed class DbContextPingTraceConnectorTests
     }
 
     /// <summary>
-    /// Verifies that the original database exception reaches the caller.
+    /// Verifies that a provider failure becomes a structured diagnostic result.
     /// </summary>
-    /// <remarks>
-    /// Direct query execution no longer converts a false connectivity
-    /// result into an adapter-generated exception. Preserving the original
-    /// exception retains the provider's diagnostic information.
-    /// </remarks>
     [TestMethod]
-    public async Task FailedQuery_PropagatesOriginalException()
+    public async Task FailedQuery_ReturnsStructuredFailure()
     {
         // Arrange
+        using CapturingLoggerProvider logs = new();
         StubDatabaseException failure = new("Database query failed.");
 
         using ServiceProvider provider = CreateProvider(_ =>
-            Task.FromException<DbDataReader>(failure));
+            Task.FromException<DbDataReader>(failure), logs);
 
         using IServiceScope scope = provider.CreateScope();
         IPingTrace sut =
             scope.ServiceProvider.GetRequiredService<IPingTrace>();
 
         // Act
-        Func<Task> act = () => sut.TraceAsync(
+        IReadOnlyList<TraceResult> results = await sut.TraceAsync(
             "Database",
             TestContext.CancellationToken);
 
         // Assert
-        var assertion =
-            await act.Should().ThrowAsync<StubDatabaseException>();
-
-        assertion.Which.Should().BeSameAs(failure);
+        results.Should().HaveCount(2);
+        results[1].Status.Should().Be(TraceStatus.Failed);
+        results[1].FailureKind.Should().Be(TraceFailureKind.Unknown);
+        results[1].ErrorCode.Should().Be("Database.ProviderFailure");
+        results[1].Message.Should().Contain(nameof(StubDatabaseException));
+        results[1].Message.Should().NotContain(failure.Message);
+        results[1].Payload.Should().BeEmpty();
+        logs.Warnings.Should().ContainSingle();
+        logs.Warnings.Single().Exception.Should().BeSameAs(failure);
+        logs.Warnings.Single().Message.Should().Contain("Database.ProviderFailure");
     }
 
     /// <summary>
@@ -194,10 +199,90 @@ public sealed class DbContextPingTraceConnectorTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    /// <summary>
+    /// Verifies that an unexpected implementation failure is not disguised as a database failure.
+    /// </summary>
+    [TestMethod]
+    public async Task UnexpectedFailure_PropagatesWithoutWarning()
+    {
+        // Arrange
+        using CapturingLoggerProvider logs = new();
+        InvalidOperationException exception = new("Implementation defect");
+        using ServiceProvider provider = CreateProvider(
+            _ => Task.FromException<DbDataReader>(exception), logs);
+        using IServiceScope scope = provider.CreateScope();
+        IPingTrace sut = scope.ServiceProvider.GetRequiredService<IPingTrace>();
+
+        // Act
+        Func<Task> act = () => sut.TraceAsync("Database", TestContext.CancellationToken);
+
+        // Assert
+        var assertion = await act.Should().ThrowAsync<InvalidOperationException>();
+        assertion.Which.Should().BeSameAs(exception);
+        logs.Warnings.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Verifies that a timeout becomes a failed result with its original exception logged.
+    /// </summary>
+    [TestMethod]
+    public async Task Timeout_ReturnsFailedResult()
+    {
+        // Arrange
+        using CapturingLoggerProvider logs = new();
+        TimeoutException exception = new("Internal timeout details");
+        using ServiceProvider provider = CreateProvider(
+            _ => Task.FromException<DbDataReader>(exception), logs);
+        using IServiceScope scope = provider.CreateScope();
+        IPingTrace sut = scope.ServiceProvider.GetRequiredService<IPingTrace>();
+
+        // Act
+        IReadOnlyList<TraceResult> results = await sut.TraceAsync("Database", TestContext.CancellationToken);
+
+        // Assert
+        results[1].Status.Should().Be(TraceStatus.Failed);
+        results[1].FailureKind.Should().Be(TraceFailureKind.Timeout);
+        results[1].ErrorCode.Should().Be("Database.DiagnosticTimeout");
+        logs.Warnings.Should().ContainSingle();
+        logs.Warnings.Single().Exception.Should().BeSameAs(exception);
+    }
+
+    /// <summary>Verifies unexpected row counts produce one warning without an exception.</summary>
+    /// <param name="rowCount">The number of diagnostic rows returned by the provider.</param>
+    [TestMethod]
+    [DataRow(0)]
+    [DataRow(2)]
+    public async Task UnexpectedRowCount_ReturnsInvalidResponse(int rowCount)
+    {
+        // Arrange
+        using CapturingLoggerProvider logs = new();
+        using ServiceProvider provider = CreateProvider(
+            _ => Task.FromResult(CreateReader(rowCount)), logs);
+        using IServiceScope scope = provider.CreateScope();
+        IPingTrace sut = scope.ServiceProvider.GetRequiredService<IPingTrace>();
+
+        // Act
+        IReadOnlyList<TraceResult> results = await sut.TraceAsync("Database", TestContext.CancellationToken);
+
+        // Assert
+        results[1].Status.Should().Be(TraceStatus.Failed);
+        results[1].FailureKind.Should().Be(TraceFailureKind.InvalidResponse);
+        results[1].ErrorCode.Should().Be("Database.UnexpectedRowCount");
+        results[1].Message.Should().Contain($"{rowCount} rows");
+        logs.Warnings.Should().ContainSingle();
+        logs.Warnings.Single().Exception.Should().BeNull();
+        logs.Warnings.Single().Message.Should().Contain("Database.UnexpectedRowCount");
+    }
+
     private static ServiceProvider CreateProvider(
-        Func<CancellationToken, Task<DbDataReader>> execute)
+        Func<CancellationToken, Task<DbDataReader>> execute,
+        CapturingLoggerProvider? logs = null)
     {
         ServiceCollection services = new();
+        if (logs is not null)
+        {
+            services.AddLogging(builder => builder.AddProvider(logs));
+        }
 
         StubCommandInterceptor interceptor = new(execute);
 
@@ -236,7 +321,7 @@ public sealed class DbContextPingTraceConnectorTests
     /// Assigning row values by column name keeps the test data readable
     /// while preserving the required reader ordinals.
     /// </remarks>
-    private static DbDataReader CreateReader()
+    private static DbDataReader CreateReader(int rowCount = 1)
     {
         DataTable table = new();
 
@@ -244,12 +329,14 @@ public sealed class DbContextPingTraceConnectorTests
         table.Columns.Add("MachineName", typeof(string));
         table.Columns.Add("Payload", typeof(string));
 
-        DataRow row = table.NewRow();
-        row["Identity"] = "TestLogin";
-        row["MachineName"] = @"TestServer\TestInstance";
-        row["Payload"] = "TestDatabase";
-
-        table.Rows.Add(row);
+        for (int i = 0; i < rowCount; i++)
+        {
+            DataRow row = table.NewRow();
+            row["Identity"] = "TestLogin";
+            row["MachineName"] = @"TestServer\TestInstance";
+            row["Payload"] = "TestDatabase";
+            table.Rows.Add(row);
+        }
 
         return table.CreateDataReader();
     }

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 using PingTrace.Core;
 using PingTrace.Runtime;
@@ -39,9 +40,10 @@ public static class ActiveDirectoryExtensions
 
         builder.Services.AddScoped<IPingTraceConnector>(provider =>
             new ActiveDirectoryPingTraceConnector(
-                name,
-                () => provider.GetRequiredService<TReader>(),
-                configuredIdentity));
+                name: name,
+                resolveReader: () => provider.GetRequiredService<TReader>(),
+                configuredIdentity: configuredIdentity,
+                logger: provider.GetRequiredService<ILogger<ActiveDirectoryPingTraceConnector>>()));
 
         return builder;
     }

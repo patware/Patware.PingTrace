@@ -152,7 +152,9 @@ public sealed class DefaultPingTrace : IPingTrace
     ///
     /// The local result is completed after the dependency responds so its
     /// elapsed time includes the dependency call. Connector results retain
-    /// their own payloads. Failures and cancellation propagate to the caller.
+    /// their own payloads and outcomes. Failed diagnostic results are returned
+    /// normally. Exceptions thrown by connectors and cancellation propagate
+    /// to the caller.
     /// </remarks>
     public async Task<IReadOnlyList<TraceResult>> TraceAsync(string destination, CancellationToken cancellationToken = default)
     {

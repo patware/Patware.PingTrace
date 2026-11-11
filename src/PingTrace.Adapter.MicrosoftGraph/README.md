@@ -69,13 +69,25 @@ The connector is scoped and resolves the client only when traced. It does not
 dispose the application-owned client. Cancellation is passed to the SDK.
 
 The base URL must be absolute and contain a host. The response must contain
-exactly one non-null organization with a nonblank ID. Invalid configuration or
-organization results throw `InvalidOperationException`. SDK, transport,
-deserialization, and cancellation failures propagate to the caller.
+exactly one non-null organization with a nonblank ID. An invalid base URL returns
+a failed `Configuration` result; invalid organization data returns `InvalidResponse`.
+Handled API errors classify HTTP 401 as `Authentication`, 403 as `Authorization`,
+and other HTTP error statuses as `RemoteError`. Transport failures, recognized
+HTTP client timeouts, and JSON parsing errors also become failed results.
 
-The current ASP.NET Core endpoint does not translate Graph error status codes.
-For example, a Graph permission error normally becomes an HTTP 500 from the
-host's exception handler, not an HTTP 403 from PingTrace.
+Failures carry `Status`, `FailureKind`, `ErrorCode`, and `Message`. Successful
+organization metadata remains in `Payload`. Every locally generated failure is
+logged at Warning level; caught exceptions are attached to preserve their original
+details. The host controls providers, filtering, and retention. Logging service
+registration alone does not retain logs.
+
+Cancellation and unexpected exceptions propagate. In particular, arbitrary token
+acquisition failures from application-supplied authentication providers are not
+automatically classified by this adapter.
+
+The ASP.NET Core endpoint returns HTTP 200 when it successfully produces a
+diagnostic report containing a handled Graph failure. Consumers must inspect the
+result status; a Graph permission failure does not become an HTTP 403 from PingTrace.
 
 ## Develop without a tenant
 

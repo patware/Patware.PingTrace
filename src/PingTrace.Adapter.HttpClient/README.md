@@ -265,21 +265,29 @@ local Trace that could silently omit descendants.
 
 | Condition | Behavior |
 | --- | --- |
-| `BaseAddress` is missing | Throws `InvalidOperationException` when tracing. |
-| Response JSON is invalid or incompatible | Deserialization fails and its exception propagates. |
-| Deserialized result is null or has a blank name | Throws `InvalidOperationException`. |
-| Recursive result array is null, empty, or contains a null or unnamed entry | Throws `InvalidOperationException`. |
-| Remote HTTP status is unsuccessful | Returns a diagnostic entry containing the HTTP status. |
-| HTTP transport failure | Returns a diagnostic entry identifying the configured destination. |
-| HttpClient timeout | Returns a diagnostic entry describing the timeout. |
+| `BaseAddress` is missing | Returns a failed `Configuration` result. |
+| Response JSON is invalid or incompatible | Returns an `InvalidResponse` result when parsing throws `JsonException`. |
+| Deserialized result is null or has a blank name | Returns a failed `InvalidResponse` result. |
+| Recursive result array is null, empty, or contains a null or unnamed entry | Returns a failed `InvalidResponse` result. |
+| Remote HTTP status is unsuccessful | Returns `Authentication` for 401, `Authorization` for 403, or `RemoteError` for other error statuses. |
+| HTTP transport failure | Returns a failed `Connection` result identifying the configured destination. |
+| HttpClient timeout | Returns a failed `Timeout` result. |
 | Caller cancellation or traversal deadline exhaustion | Cancellation propagates and stops the operation. |
+| Unexpected exception | Propagates to the caller. |
 
 The connector checks cancellation before creating the client and passes the
 token to the HTTP and JSON operation.
 
 Diagnostic failures use the same TraceResult shape as successful traces,
-with the failure described in Payload. A completed request does not imply
-that every destination is healthy.
+with `Status = Failed`, a `FailureKind`, a stable `ErrorCode`, and an explanation
+in `Message`. `Payload` is reserved for diagnostic evidence. Remote outcomes are
+preserved, including `Unknown` from older producers that omit status. A completed
+HTTP request does not imply that every destination is healthy.
+
+Each locally generated failure is logged at Warning level with its destination,
+error code, and message. Handled exceptions are attached to the log entry.
+The host must configure a logging provider and appropriate filtering to retain
+these details; registering logging services alone does not store logs.
 
 A client is obtained from `IHttpClientFactory` for each trace operation and
 disposed when that operation finishes. Handler lifetime management remains

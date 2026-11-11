@@ -1,5 +1,7 @@
 using System.DirectoryServices.Protocols;
 
+using PingTrace.Core;
+
 namespace PingTrace.Adapter.ActiveDirectory;
 
 /// <summary>
@@ -47,9 +49,10 @@ public sealed class LdapActiveDirectoryDiagnosticsReader : IActiveDirectoryDiagn
 
         if (_connection.AuthType == AuthType.Anonymous)
         {
-            throw new InvalidOperationException(
-                "The Active Directory diagnostic reader requires " +
-                "an authenticated LDAP connection.");
+            throw new DirectoryDiagnosticException(
+                TraceFailureKind.Configuration,
+                "Ldap.AnonymousAuthentication",
+                "The directory diagnostic reader requires authenticated LDAP access.");
         }
 
         _connection.Bind();
@@ -81,26 +84,22 @@ public sealed class LdapActiveDirectoryDiagnosticsReader : IActiveDirectoryDiagn
         });
     }
 
-    private SearchResultEntry ReadEntry(
-        string distinguishedName,
-        string filter,
-        string[] attributes)
+    private SearchResultEntry ReadEntry(string distinguishedName, string filter, string[] attributes)
     {
         SearchRequest request = new(
-            distinguishedName,
-            filter,
-            SearchScope.Base,
-            attributes);
+            distinguishedName: distinguishedName,
+            ldapFilter: filter,
+            searchScope: SearchScope.Base,
+            attributeList: attributes);
 
         SearchResponse response = (SearchResponse)_connection.SendRequest(request);
 
-        if (response.Entries.Count != 1)
-        {
-            throw new InvalidOperationException(
-                "The directory diagnostic query did not return exactly one entry.");
-        }
-
-        return response.Entries[0];
+        return response.Entries.Count != 1
+            ? throw new DirectoryDiagnosticException(
+                TraceFailureKind.InvalidResponse,
+                "Ldap.UnexpectedEntryCount",
+                "The directory diagnostic query did not return exactly one entry.")
+            : response.Entries[0];
     }
 
     private static string ReadRequiredString(SearchResultEntry entry, string attributeName)
@@ -109,18 +108,19 @@ public sealed class LdapActiveDirectoryDiagnosticsReader : IActiveDirectoryDiagn
 
         if (attribute is null || attribute.Count != 1)
         {
-            throw new InvalidOperationException(
+            throw new DirectoryDiagnosticException(
+                TraceFailureKind.InvalidResponse,
+                "Ldap.InvalidAttributeCount",
                 $"The directory response must contain one '{attributeName}' value.");
         }
 
         object[] values = attribute.GetValues(typeof(string));
 
-        if (values[0] is not string value || string.IsNullOrWhiteSpace(value))
-        {
-            throw new InvalidOperationException(
-                $"The directory response contains an invalid '{attributeName}' value.");
-        }
-
-        return value;
+        return values[0] is not string value || string.IsNullOrWhiteSpace(value)
+            ? throw new DirectoryDiagnosticException(
+                TraceFailureKind.InvalidResponse,
+                "Ldap.InvalidAttributeValue",
+                $"The directory response contains an invalid '{attributeName}' value.")
+            : value;
     }
 }

@@ -72,10 +72,21 @@ for every property returned by PowerShell's `Get-ADDomain`.
 `DomainObjectName` is the domain object's `name` attribute, not necessarily its
 DNS or NetBIOS name. The payload remains a string under the current Core contract.
 
-The connector rejects null or incomplete diagnostics. Reader, LDAP, and
-cancellation failures propagate. The ASP.NET Core endpoint does not map directory
-failures to HTTP authentication statuses; the host's exception handler normally
-returns HTTP 500.
+Null or incomplete diagnostics become failed `InvalidResponse` results. The
+built-in reader reports anonymous authentication as `Configuration` and invalid
+entry counts or required attributes as `InvalidResponse`. Known LDAP client and
+operation failures are classified from their error/result codes; unclassified
+client errors remain `Unknown`.
+
+Failures carry `Status`, `FailureKind`, `ErrorCode`, and an explanation in
+`Message`. Every failure is logged at Warning level with the destination and
+diagnostic details; handled exceptions are attached. The host must configure a
+logging provider and filtering to retain these logs.
+
+Reader resolution errors, unexpected custom-reader exceptions, and cancellation
+still propagate. A successfully produced report containing a handled directory
+failure is returned as HTTP 200 by the ASP.NET Core endpoint. Consumers inspect
+the diagnostic status rather than treating HTTP success as dependency health.
 
 ## Connection ownership and cancellation
 
@@ -106,8 +117,9 @@ Sample:     PingTrace -> connector -> simulated reader
 ```
 
 The tests substitute the reader and verify mapping, deferred resolution,
-original failure propagation, incomplete-result rejection, token forwarding,
-and cancellation with a cooperative reader. They do not execute or validate
+token forwarding, and cancellation with a cooperative reader. Failure assertions
+must distinguish failed diagnostic results from unexpected exceptions that
+propagate. They do not execute or validate
 the LDAP reader's bind, queries, native response parsing, authentication,
 permissions, or native cancellation behavior.
 
