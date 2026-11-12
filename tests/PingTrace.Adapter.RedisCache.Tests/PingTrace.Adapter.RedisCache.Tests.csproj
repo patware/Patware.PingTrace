@@ -14,7 +14,7 @@
   </ItemGroup>
   
   <ItemGroup>
-    <ProjectReference Include="..\..\src\PingTrace.Adapater.RedisCache\PingTrace.Adapater.RedisCache.csproj" />
+    <ProjectReference Include="..\..\src\PingTrace.Adapter.RedisCache\PingTrace.Adapter.RedisCache.csproj" />
   </ItemGroup>
 
   <ItemGroup>

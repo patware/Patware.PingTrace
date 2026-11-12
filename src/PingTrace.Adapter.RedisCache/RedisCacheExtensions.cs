@@ -6,7 +6,7 @@ using PingTrace.Runtime;
 
 using StackExchange.Redis;
 
-namespace PingTrace.Adapater.RedisCache;
+namespace PingTrace.Adapter.RedisCache;
 
 /// <summary>
 /// Registers Redis cache destinations for PingTrace.

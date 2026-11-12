@@ -1,7 +1,7 @@
 using AspireAppSample.Web;
 using AspireAppSample.Web.Components;
 
-using PingTrace.Adapater.RedisCache;
+using PingTrace.Adapter.RedisCache;
 using PingTrace.Adapter.HttpClient;
 using PingTrace.AspNetCore;
 using PingTrace.Runtime;

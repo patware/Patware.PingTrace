@@ -4,7 +4,7 @@ using PingTrace.Core;
 
 using StackExchange.Redis;
 
-namespace PingTrace.Adapater.RedisCache;
+namespace PingTrace.Adapter.RedisCache;
 
 /// <summary>
 /// Checks Redis connectivity through a registered connection.

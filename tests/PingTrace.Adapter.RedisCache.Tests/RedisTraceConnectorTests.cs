@@ -1,11 +1,14 @@
 using FluentAssertions;
+
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+
 using NSubstitute;
-using PingTrace.Adapater.RedisCache;
+
 using PingTrace.Core;
 using PingTrace.Runtime;
 using PingTrace.Tests;
+
 using StackExchange.Redis;
 
 namespace PingTrace.Adapter.RedisCache.Tests;
@@ -66,11 +69,11 @@ public sealed class RedisTraceConnectorTests
         using CapturingLoggerProvider logs = new();
         Exception exception = scenario switch
         {
-            "client-timeout" => new RedisTimeoutException("Internal details", CommandStatus.Unknown),
+            "client-timeout" => new RedisTimeoutException(CommandFlags.CommandRetryNever, "Internal details", CommandStatus.Unknown),
             "timeout" => new TimeoutException("Internal details"),
-            "authentication" => new RedisConnectionException(ConnectionFailureType.AuthenticationFailure, "Internal details"),
-            "connection" => new RedisConnectionException(ConnectionFailureType.SocketFailure, "Internal details"),
-            _ => new RedisServerException("Internal details")
+            "authentication" => new RedisConnectionException(ConnectionFailureType.AuthenticationFailure, CommandFlags.CommandRetryNever, "Internal details"),
+            "connection" => new RedisConnectionException(ConnectionFailureType.SocketFailure, CommandFlags.CommandRetryNever, "Internal details"),
+            _ => new RedisServerException(RedisErrorKind.Unknown, CommandFlags.CommandRetryNever, "Internal details")
         };
         IDatabase database = Substitute.For<IDatabase>();
         database.PingAsync(Arg.Any<CommandFlags>()).Returns(Task.FromException<TimeSpan>(exception));
@@ -138,7 +141,8 @@ public sealed class RedisTraceConnectorTests
         services.AddPingTrace(builder => builder.AddRedisCacheDestination("Cache"));
         using ServiceProvider provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
-            ValidateScopes = true, ValidateOnBuild = true
+            ValidateScopes = true,
+            ValidateOnBuild = true
         });
         using IServiceScope scope = provider.CreateScope();
         IPingTrace sut = scope.ServiceProvider.GetRequiredService<IPingTrace>();
@@ -160,7 +164,8 @@ public sealed class RedisTraceConnectorTests
         services.AddPingTrace(builder => builder.AddRedisCacheDestination("Cache"));
         return services.BuildServiceProvider(new ServiceProviderOptions
         {
-            ValidateScopes = true, ValidateOnBuild = true
+            ValidateScopes = true,
+            ValidateOnBuild = true
         });
     }
 }

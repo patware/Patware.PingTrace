@@ -1,14 +1,14 @@
-# PingTrace.Adapater.RedisCache
+# PingTrace.Adapter.RedisCache
 
 Redis connectivity diagnostics using an existing `IConnectionMultiplexer`
-registration. The project and namespace currently use the spelling `Adapater`.
+registration.
 
 ## Registration and ownership
 
 Register the application's connection separately, then register a destination:
 
 ```csharp
-using PingTrace.Adapater.RedisCache;
+using PingTrace.Adapter.RedisCache;
 using PingTrace.Runtime;
 
 services.AddPingTrace(builder => builder.AddRedisCacheDestination("Cache"));
@@ -38,3 +38,13 @@ Caller cancellation and unexpected errors, including a missing connection
 registration, propagate. The five-second wait bounds waiting for the ping task;
 it does not bound synchronous connection resolution or cancel the Redis command.
 The Redis client's own timeout may expire independently of this wait.
+
+## Discovery and indirect tracing in 0.3.0
+
+This connector is a leaf. Discovery lists its registered alias without executing
+its diagnostic operation. A remote application can reach it through discovery and
+routed HTTP tracing when the owning application exposes the new endpoints. Its
+name remains the alias assigned by that owner. Discovery does not establish health;
+inspect the trace result's status and failure details when the probe executes.
+
+See [discovery and routing](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/DISCOVERY-AND-ROUTING.md).
