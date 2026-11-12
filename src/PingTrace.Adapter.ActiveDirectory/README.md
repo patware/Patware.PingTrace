@@ -133,3 +133,13 @@ The Aspire sample has a separate simulated reader with configurable scenarios.
 See the [AD simulation walkthrough](https://github.com/patware/Patware.PingTrace/blob/main/docs/development/GETTING-STARTED.md#exercise-the-simulated-active-directory-destination).
 Real-domain verification remains separate; successful simulated tests do not
 establish that the production LDAP integration works in a deployment.
+
+## Discovery and indirect tracing in 0.3.0
+
+This connector is a leaf. Discovery lists its registered alias without executing
+its diagnostic operation. A remote application can reach it through discovery and
+routed HTTP tracing when the owning application exposes the new endpoints. Its
+name remains the alias assigned by that owner. Discovery does not establish health;
+inspect the trace result's status and failure details when the probe executes.
+
+See [discovery and routing](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/DISCOVERY-AND-ROUTING.md).

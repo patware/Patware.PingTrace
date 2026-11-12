@@ -108,8 +108,9 @@ description of the API's internal dependencies.
 
 This keeps connection knowledge with the application that owns it.
 
-Version 1 excludes destination discovery. Address resolution supplied by
-the host, such as Aspire service discovery, is a separate responsibility.
+Version 0.3.0 discovers explicitly registered destinations across participating
+applications. Host address resolution, such as Aspire service discovery, remains
+a separate responsibility.
 
 Recursive tracing follows participating applications' configured dependencies.
 It does not discover arbitrary network targets.
@@ -139,8 +140,9 @@ and dependency-injection facilities where practical.
 
 A result should identify what the participating component actually reports.
 
-The local destination alias and the remote application name have different
-meanings. The runtime should not overwrite the remote name with the alias.
+The owner defines a destination's name. The HTTP connector assigns that alias
+to the immediate remote result, preserving descendants' owner-defined names.
+Machine, identity, payload, outcome, and timing remain remote diagnostic evidence.
 
 Likewise, a connector must not present its own machine or runtime identity
 as though those values came from a remote database or service.
@@ -174,13 +176,14 @@ A failed dependency call must not quietly become an empty successful
 observation.
 
 The current runtime propagates connector exceptions and cancellation.
-It does not return partial results when a connector fails.
+Handled failures return failed diagnostic results and allow traversal to continue.
+A propagated exception stops traversal without returning accumulated results.
 
 Custom connectors should pass cancellation to operations that support it
 and avoid masking cancellation as success.
 
-Future partial-result support needs an explicit result contract that
-distinguishes successful observations, failures, and incomplete traversal.
+Structured outcomes distinguish successful and failed observations. Discovery
+separately reports incompleteness; interrupted TraceAll does not return a partial report.
 
 Recursive tracing uses path-local cycle detection, depth limits, and cooperative
 deadlines. Shared dependencies are visited per path. There is no separate limit

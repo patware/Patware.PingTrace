@@ -109,3 +109,13 @@ These simulations do not validate real authentication, permissions, DNS, TLS,
 or Microsoft service behavior. Live integration verification requires an
 appropriately configured tenant and client. Production applications register
 the real authenticated client; there is no automatic fallback to simulation.
+
+## Discovery and indirect tracing in 0.3.0
+
+This connector is a leaf. Discovery lists its registered alias without executing
+its diagnostic operation. A remote application can reach it through discovery and
+routed HTTP tracing when the owning application exposes the new endpoints. Its
+name remains the alias assigned by that owner. Discovery does not establish health;
+inspect the trace result's status and failure details when the probe executes.
+
+See [discovery and routing](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/DISCOVERY-AND-ROUTING.md).

@@ -34,6 +34,8 @@ The outgoing operation depends on the requested trace:
 | --- | --- | --- |
 | Named destination Trace | `GET /pingtrace/Trace` | One named `TraceResult` object |
 | TraceAll | `POST /pingtrace/TraceAll` with traversal state | A nonempty array of named trace results |
+| Discover | `POST /pingtrace/Discover` with discovery state | A validated `DiscoveryResult` |
+| Routed Trace | `POST /pingtrace/TraceRoute` with route state | A nonempty array of named trace results |
 
 Registration does not send a request. Communication occurs when the
 application traces the registered destination.
@@ -85,14 +87,17 @@ diagnostic information being exposed.
 
 ## Destination names and HTTP clients
 
-The destination name is a local alias. It does not change the application
-name returned by the remote endpoint.
+The destination name is the owner's alias. After validating a diagnostic response,
+the connector assigns this name to its first result. Descendant names, outcomes,
+metadata, and timings remain unchanged. This distinguishes instances of the same
+application registered as separate destinations.
 
 Each registration creates:
 
 - A named HTTP client using `PingTrace.Http:{name}`.
 - A scoped `IPingTraceConnector` for that destination, also implementing
-  `IRecursivePingTraceConnector`.
+  `IRecursivePingTraceConnector`, `IDiscoverablePingTraceConnector`, and
+  `IRoutedPingTraceConnector`.
 
 The default runtime compares destination names without regard to case.
 Names must be unique and must not conflict with the calling application's
@@ -177,7 +182,7 @@ https://example.com/backend/pingtrace/TraceAll
 | `https://example.com/backend/` | `/pingtrace/Trace` | `https://example.com/pingtrace/Trace` |
 | `https://example.com/backend/` | `pingtrace/Trace` | `https://example.com/backend/pingtrace/Trace` |
 
-Both paths must be nonblank. Registration rejects absolute URLs, paths
+All endpoint paths must be nonblank. Registration rejects absolute URLs, paths
 beginning with `//`, and paths containing backslashes.
 
 ## Configure client behavior
@@ -235,7 +240,7 @@ but it does not inherit settings specific to the sample's typed
 
 ## Remote response contract
 
-For named destination Trace, the adapter deserializes one `TraceResult`.
+For direct destination Trace, the adapter deserializes one `TraceResult`.
 
 It requires:
 
@@ -317,3 +322,37 @@ overlapping durations to calculate total latency.
 - [ASP.NET Core endpoints](https://github.com/patware/Patware.PingTrace/blob/main/src/PingTrace.AspNetCore/README.md)
 - [Distributed hosting](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/DISTRIBUTED-HOSTING.md)
 - [Connector architecture](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/PLUGIN-ARCHITECTURE.md)
+
+## Discovery and routed requests in 0.3.0
+
+The connector supports Discover and TraceRoute in addition to Trace and TraceAll.
+Discovery failures handled by the adapter produce incomplete reports with
+branch issues; an unavailable endpoint does not prove that descendants are absent.
+Routed requests propagate recognized `PingTrace.Routing.v1` execution errors as
+`TraceRoutingException`. Other HTTP errors use the existing diagnostic-failure
+handling. A generic HTTP 404 is not classified as an unknown destination.
+
+Discovery and routed responses use a 1 MiB buffering limit. Caller cancellation
+and unexpected exceptions propagate. The first routed diagnostic result receives
+the owner's alias, while descendant names and evidence are preserved.
+
+Registration retains the original five-parameter overload, adds a six-parameter
+overload for an explicit discovery path, and a seven-parameter overload accepting
+all four endpoint paths. Additional overloads require explicit path arguments.
+
+For a remote application mapped under `/diagnostics`, configure all four paths:
+
+```csharp
+pingTrace.AddHttpDestination(
+    name: "ApiService",
+    configureClient: client => client.BaseAddress = new Uri("https://api.example.com/"),
+    tracePath: "/diagnostics/Trace",
+    traceAllPath: "/diagnostics/TraceAll",
+    discoverPath: "/diagnostics/Discover",
+    traceRoutePath: "/diagnostics/TraceRoute");
+```
+
+These paths are independent. The shorter overloads retain the default discovery
+and/or routed paths; a custom trace prefix is not inferred for other operations.
+
+See the [routing guide](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/DISCOVERY-AND-ROUTING.md).

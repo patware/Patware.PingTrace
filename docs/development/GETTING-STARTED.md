@@ -80,7 +80,7 @@ foreach ($project in $libraryProjects) {
 
 `dotnet build` restores dependencies unless instructed otherwise.
 
-This builds the seven current libraries:
+This builds the eight current libraries:
 
 - `PingTrace.Core`
 - `PingTrace.Runtime`
@@ -89,6 +89,7 @@ This builds the seven current libraries:
 - `PingTrace.Adapter.EntityFramework`
 - `PingTrace.Adapter.MicrosoftGraph`
 - `PingTrace.Adapter.ActiveDirectory`
+- `PingTrace.Adapter.RedisCache`
 
 A running container runtime is not required for this workflow.
 
@@ -186,7 +187,7 @@ Then request:
 ```
 
 Expect an array containing the frontend result followed by the
-`AspireAppSample.ApiService` result.
+`WeatherApiClient` result.
 
 The API also exposes its own `/pingtrace/Ping` and `/pingtrace/Trace`
 endpoints.
@@ -312,11 +313,13 @@ explicitly. The delay observes cancellation. There is no HTTP transport or
 automatic retry pipeline around this reader, unlike the sample's Graph client.
 These failure categories do not reproduce native LDAP exception types.
 
-Failures propagate to the host's exception handler and normally produce HTTP
-500, including `Unauthorized`. Ping and local Trace do not resolve the reader.
+`Incomplete` returns a failed `InvalidResponse` result. The simulated
+`Unauthorized` and `Unavailable` exceptions are not native LDAP failures handled
+by the connector; they propagate to the host and normally produce HTTP 500. Ping and local Trace do not resolve the reader.
 The destination-specific request does not query SQL Server or Graph, though
 the API still requires its database connection-string setting at startup.
-TraceAll visits all three API destinations in name order and stops on failure.
+TraceAll visits all three API destinations in name order. Failed results do not
+stop traversal; propagated exceptions and cancellation do.
 
 This simulation validates connector mapping and application wiring. It does not
 execute the built-in LDAP reader or validate binding, LDAP queries, response
@@ -343,23 +346,21 @@ files to refresh the generated site.
 
 The configured output directory is `docs/_site`.
 
-### Current API-reference limitation
+### API reference generation
 
-The current `docs/docfx.json` metadata configuration has an empty input
-file list. It does not yet identify the libraries from which to generate
-API reference pages.
+The `docs/docfx.json` metadata inputs select all `src/**/*.csproj` projects,
+using Release configuration and the `net10.0` target. Generate metadata before
+building the site:
 
-The preview command builds site content; it does not establish that API
-metadata is correctly configured or up to date.
+```powershell
+docfx metadata docs/docfx.json
+docfx build docs/docfx.json --serve
+```
 
-API-reference links can remain unresolved until the metadata inputs are
-configured and generation succeeds.
-
-The current configuration also does not establish the compiled-assembly
-and XML-documentation workflow described in earlier documentation.
-
-DocFX is not registered in the repository's current tool manifest.
-Restoring repository tools alone will not install it.
+Metadata generation can require project evaluation, dependency restore, and the
+.NET SDK. The generated API files go to `docs/api`; site output goes to
+`docs/_site`. Edit source Markdown and XML documentation rather than generated
+files. Install DocFX separately; it is not supplied by a repository tool manifest.
 
 ## Create local packages
 
@@ -406,7 +407,7 @@ $packages = ./Build.ps1
 ./eng/Test-Packages.ps1 -PackageDirectory $packages
 ```
 
-This builds the seven libraries, runs library tests, creates packages
+This builds the eight libraries, runs library tests, creates packages
 and symbol packages, validates their contents, and builds and runs
 an isolated package consumer.
 
@@ -435,3 +436,21 @@ before relying on a solution build on that platform.
 - [Architecture](../architecture/ARCHITECTURE.md)
 - [Execution model](../architecture/PINGTRACE.md)
 - [Distributed hosting](../architecture/DISTRIBUTED-HOSTING.md)
+
+## Exercise discovery and indirect tracing
+
+For version 0.3.0, use the frontend address from the Aspire dashboard:
+
+1. Request `/pingtrace/Discover`. Inspect `IsComplete` and `Issues`, not only HTTP status.
+2. Confirm that `ActiveDirectory` has segments `["WeatherApiClient", "ActiveDirectory"]`.
+3. Request `/pingtrace/Trace?destination=ActiveDirectory`.
+4. Expect root, `WeatherApiClient`, and `ActiveDirectory` results. Inspect each status.
+5. Request `/pingtrace/TraceAll` to include Redis and all API diagnostic dependencies.
+
+Discovery does not run Redis, SQL Server, Graph, or AD diagnostic probes. Those
+can still fail when traced. The frontend's PingTrace HTTP client has a five-second
+timeout and removes resilience handlers; this client timeout can expire before
+the runtime's thirty-second overall deadline.
+
+See [discovery and routing](../architecture/DISCOVERY-AND-ROUTING.md) for limits,
+structured errors, explicit routes, and custom-path configuration.

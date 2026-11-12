@@ -29,7 +29,7 @@ its own observations.
 
 ## Current endpoint authorization
 
-`MapPingTrace()` maps Ping, Trace, and both TraceAll endpoints into one route group.
+`MapPingTrace()` maps Ping, Trace, TraceAll, Discover, and TraceRoute endpoints into one route group.
 
 It does not add `RequireAuthorization()` or `AllowAnonymous()` metadata.
 Access therefore depends on the host's policies and surrounding infrastructure.
@@ -131,8 +131,9 @@ diagnostic credential can access the remote endpoint.
 
 HTTP callers supply a destination name, not an arbitrary remote address.
 
-The default runtime resolves that name against explicitly registered
-connectors. Unknown names are rejected.
+The default runtime resolves that name against local and immediate registrations,
+then discovers indirect registered routes if needed. Resolution failures are
+reported explicitly; discovery does not permit arbitrary outbound addresses.
 
 The HTTP adapter's base address and trace path are configured by the
 application during registration.
@@ -210,10 +211,10 @@ deployment's requirements.
 
 ## Failures and error responses
 
-The current HTTP handler returns generic messages for empty or unknown
-destinations.
-
-Other failures propagate to the host's exception handling.
+Empty destination requests return a generic validation message. Routing failures
+return structured errors that can include destination aliases, candidate paths,
+and discovery issues. Handled diagnostic failures return selected messages in
+TraceResult; unexpected exceptions propagate to the host's exception handling.
 
 The host determines whether responses contain stack traces, internal
 addresses, exception details, or other diagnostic information.
@@ -278,3 +279,16 @@ For reporting instructions, see the repository's
 - [Extension contracts](PLUGIN-ARCHITECTURE.md)
 - [Distributed hosting](DISTRIBUTED-HOSTING.md)
 - [Capability boundaries](../design/CAPABILITY-BOUNDARIES.md)
+
+## Discovery and routed requests in 0.3.0
+
+Discover and TraceRoute inherit the same route-group authorization as all other
+PingTrace endpoints. Discovery exposes registered topology; routing errors may
+include candidate paths and branch issues. Apply the host's access policy to
+both discovery and execution, and configure outgoing clients with the required
+credentials. Knowledge of a discovered route does not authorize its execution.
+
+Discovery limits depth, time, report size, and HTTP response buffering. These
+are cooperative per-request controls, not a global rate limiter or concurrency
+budget. An indirect name lookup can contact multiple participating applications.
+See [discovery and routing](DISCOVERY-AND-ROUTING.md).

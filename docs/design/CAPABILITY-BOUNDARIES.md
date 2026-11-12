@@ -14,15 +14,16 @@ This page separates implemented behavior from product direction.
 | Default application name | Managed entry-assembly name |
 | Registration | Parameterless or a `PingTraceBuilder` callback |
 | Custom implementation | An existing DI registration of `IPingTrace` is preserved |
-| HTTP endpoints | GET Ping, Trace, and TraceAll; POST TraceAll; optional string route prefix |
+| HTTP endpoints | GET Ping, Trace, TraceAll, Discover; POST TraceAll, Discover, TraceRoute; configurable route prefix |
 | HTTP dependencies | Named clients use GET for local Trace and POST with context for TraceAll |
 | Cancellation | Passed from HTTP requests through runtime and connector calls |
 | Default local payload | Entry-assembly version, falling back to Pong |
 | EF Core destination | SQL Server diagnostic query through a registered DbContext |
 | Microsoft Graph destination | Organization metadata through a registered GraphServiceClient, with a fixed configured identity label |
 | Active Directory destination | Domain diagnostics through a registered reader; included LDAP reader binds and reads RootDSE and the domain object |
-| Tests | Separate Runtime, AspNetCore, HttpClient, EntityFramework, MicrosoftGraph, and ActiveDirectory projects |
-| Sample | Aspire frontend tracing its API; API tracing SQL Server plus simulated Graph and AD destinations |
+| Redis destination | Ping through an application-registered IConnectionMultiplexer; deferred resolution and bounded waiting |
+| Tests | Separate Runtime, AspNetCore, HttpClient, EntityFramework, MicrosoftGraph, ActiveDirectory, and Redis projects |
+| Sample | Aspire frontend tracing Redis and its API, with indirect access to SQL Server and simulated Graph/AD destinations |
 
 The Graph adapter's identity is supplied configuration metadata, not a
 server-returned identity assertion. Its organization read does not verify Teams
@@ -40,14 +41,16 @@ The HTTP adapter expects the remote local Trace endpoint's current object
 response. Changing that response to an array requires coordinated adapter,
 endpoint, and test changes.
 
-## Excluded from version 1
+## Discovery in 0.3.0
 
-Destination discovery and the `TraceDestination` metadata model are excluded.
+Applications explicitly register their immediate dependencies. Discovery enumerates
+those registrations recursively and reports paths, completeness, and branch issues.
+Indirect destination Trace resolves a unique route only after complete discovery.
+Explicit routed Trace can execute a chosen path without discovery.
 
-Applications explicitly register the dependencies they want to trace.
-
-Aspire service discovery is a separate concern: it resolves service addresses
-for HTTP clients. Using it does not introduce a PingTrace destination catalog.
+Aspire service discovery resolves addresses; PingTrace discovery resolves diagnostic
+aliases. There is no central registry, network scanning, or cached topology.
+See [discovery and routing](../architecture/DISCOVERY-AND-ROUTING.md).
 
 ## Intended next capabilities
 
@@ -73,17 +76,18 @@ validation accepts a maximum combined ancestor count and remaining depth of
 sixteen. An absolute deadline crosses process boundaries, with each runtime
 also applying a thirty-second cooperative cap.
 
-Failures stop traversal without returning partial results. Separate limits on
+Propagated exceptions stop traversal without returning accumulated results.
+Failed diagnostic results allow traversal to continue. Separate limits on
 total requests or results, structured partial failures, and graph relationships
 remain possible future work. See
 [recursive execution](../architecture/PINGTRACE.md#recursive-traceall).
 
 ### Destination routing
 
-Named destination Trace selects an immediate connector. It does not
-automatically route a request to a dependency behind another application.
-
-A future path representation must make that routing explicit.
+Implemented routing uses arrays of registered connector aliases. Local and direct
+matches take precedence; otherwise the runtime discovers a unique indirect route.
+Multiple matches, incomplete discovery, and missing destinations are distinct errors.
+Automatic rerouting and route caching remain unimplemented.
 
 ### Graph representation
 

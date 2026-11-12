@@ -61,13 +61,13 @@ public static class HttpClientExtensions
         string traceAllPath = "/pingtrace/TraceAll")
     {
         return AddHttpDestination(
-            builder,
-            name,
-            configureClient,
-            tracePath,
-            traceAllPath,
-            "/pingtrace/Discover",
-            "/pingtrace/TraceRoute");
+            builder: builder,
+            name: name,
+            configureClient: configureClient,
+            tracePath: tracePath,
+            traceAllPath: traceAllPath,
+            discoverPath: "/pingtrace/Discover",
+            traceRoutePath: "/pingtrace/TraceRoute");
     }
 
     /// <summary>
@@ -95,13 +95,13 @@ public static class HttpClientExtensions
         string discoverPath)
     {
         return AddHttpDestination(
-            builder,
-            name,
-            configureClient,
-            tracePath,
-            traceAllPath,
-            discoverPath,
-            "/pingtrace/TraceRoute");
+            builder: builder,
+            name: name,
+            configureClient: configureClient,
+            tracePath: tracePath,
+            traceAllPath: traceAllPath,
+            discoverPath: discoverPath,
+            traceRoutePath: "/pingtrace/TraceRoute");
     }
 
     /// <summary>
@@ -183,7 +183,7 @@ public static class HttpClientExtensions
                 tracePath: tracePath,
                 traceAllPath: traceAllPath,
                 discoverPath: discoverPath,
-                traceRoutePath: "/pingtrace/TraceRoute",
+                traceRoutePath: traceRoutePath,
                 logger: provider.GetRequiredService<ILogger<HttpPingTraceConnector>>()));
 
         return httpClientBuilder;

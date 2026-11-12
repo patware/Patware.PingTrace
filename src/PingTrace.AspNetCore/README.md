@@ -48,6 +48,9 @@ The default route prefix is `/pingtrace`.
 | `GET /pingtrace/Trace?destination=NAME` | A JSON array of trace results. |
 | `GET /pingtrace/TraceAll` | Starts a recursive traversal and returns a JSON array. |
 | `POST /pingtrace/TraceAll` | Continues traversal from a JSON `TraceAllRequest` and returns a JSON array. |
+| `GET /pingtrace/Discover` | Starts discovery; returns routes, completeness, and issues. |
+| `POST /pingtrace/Discover` | Continues discovery with request context. |
+| `POST /pingtrace/TraceRoute` | Executes an explicit route and returns a trace array. |
 
 Successful responses use HTTP status `200`.
 
@@ -155,8 +158,8 @@ Requesting `/pingtrace/Trace?destination=ApiService` invokes that dependency.
 The built-in HTTP adapter requests `/pingtrace/Trace` on the remote application;
 it does not automatically traverse the remote application's dependencies.
 
-The destination alias belongs to the calling application. The remote result
-retains the remote application's own name.
+The destination alias belongs to the calling application and becomes the first
+remote result's name. Descendant names remain those assigned by their owners.
 
 ## Change the route prefix
 
@@ -180,6 +183,9 @@ That invocation does not also map the default `/pingtrace` routes.
 
 When a remote application uses a custom prefix, configure its HTTP connector's
 `tracePath` and `traceAllPath` to match the remote routes. The paths are independent.
+Discovery and routed tracing also need matching `discoverPath` and
+`traceRoutePath` arguments. Use the full HTTP registration overload when
+customizing all four endpoint paths.
 
 ## Authorization
 
@@ -193,7 +199,7 @@ app.MapPingTrace()
     .RequireAuthorization();
 ```
 
-This protects Ping, Trace, and both TraceAll endpoints using the application's default
+This protects Ping, Trace, TraceAll, Discover, and TraceRoute endpoints using the application's default
 authorization policy.
 
 To use an existing named policy:
@@ -233,8 +239,9 @@ the deployment and keep secrets out of diagnostic payloads.
 | TraceAll POST contains invalid traversal state | Returns `400` before invoking the runtime. |
 | Other implementation or connector failure | Propagates to the host's exception handling. |
 
-With the default runtime, an unknown destination produces
-`KeyNotFoundException`.
+The default runtime discovers indirect destinations and reports resolution failures
+through `TraceRoutingException`. The `KeyNotFoundException` catch remains for
+custom implementations.
 
 The endpoint catches that exception type from the entire named Trace call.
 A custom implementation or connector throwing the same exception will
@@ -262,10 +269,11 @@ using PingTrace alongside them.
 
 ## Current scope
 
-This package maps GET endpoints for Ping, Trace, and TraceAll, plus POST TraceAll.
+This package maps GET Ping, Trace, TraceAll, and Discover, plus POST TraceAll,
+Discover, and TraceRoute.
 
 It does not explicitly map an HTTP HEAD endpoint or provide
-dependency discovery, a graph viewer, or separate Ping and Trace
+a graph viewer or separate Ping and Trace
 authorization options.
 
 Result contents and dependency behavior come from the registered `IPingTrace`
@@ -277,3 +285,25 @@ implementation.
 - [Runtime registration and behavior](https://github.com/patware/Patware.PingTrace/blob/main/src/PingTrace.Runtime/README.md)
 - [Execution model](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/PINGTRACE.md)
 - [Security considerations](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/SECURITY.md)
+
+## Discovery and routing endpoints in 0.3.0
+
+| Request | Response |
+| --- | --- |
+| `GET /pingtrace/Discover` | Starts discovery and returns a `DiscoveryResult`. |
+| `POST /pingtrace/Discover` | Continues discovery using a `DiscoveryRequest`. |
+| `POST /pingtrace/TraceRoute` | Executes a `TraceRouteRequest` and returns a trace array. |
+
+Named Trace also resolves indirect destinations when the registered runtime
+supports that behavior. Discover can return HTTP 200 with `IsComplete = false`;
+callers must inspect its issues. Unsupported optional capabilities return 501.
+Invalid request state returns 400 before execution.
+
+Structured routing errors use protocol `PingTrace.Routing.v1`: missing routes
+map to 404, ambiguity or cycles to 409, incomplete discovery to 503, and
+unsupported forwarding to 501. These are distinct from HTTP 200 diagnostic
+reports containing failed `TraceResult` entries.
+
+All endpoints belong to the same route group and inherit its authorization.
+See the [routing guide](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/DISCOVERY-AND-ROUTING.md)
+for request and error contracts.

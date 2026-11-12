@@ -21,8 +21,9 @@ This page describes the current implementation. See
 | `PingTrace.Adapter.EntityFramework` | SQL Server diagnostics and destination registration | Core, Runtime |
 | `PingTrace.Adapter.MicrosoftGraph` | Organization diagnostics and destination registration | Core, Runtime |
 | `PingTrace.Adapter.ActiveDirectory` | Domain diagnostics, LDAP reader, and destination registration | Core, Runtime |
+| `PingTrace.Adapter.RedisCache` | Redis diagnostics and destination registration | Core, Runtime |
 
-All seven libraries currently target .NET 10.
+All eight libraries currently target .NET 10.
 
 The following arrows represent project references, not network requests:
 
@@ -66,7 +67,7 @@ A connector exposes a name and returns a collection of trace results.
 The collection allows a connector to supply multiple observations without
 requiring the runtime to understand the underlying transport.
 
-The HTTP connector returns one remote observation for named Trace and a remote
+The HTTP connector returns one remote observation for direct Trace and a remote
 result array for TraceAll.
 
 ## Runtime
@@ -184,11 +185,14 @@ app.MapPingTrace("/diagnostics");
 | `GET /pingtrace/Trace?destination=NAME` | Named `TraceAsync(NAME)` | JSON array |
 | `GET /pingtrace/TraceAll` | `TraceAllAsync()` with default context | JSON array |
 | `POST /pingtrace/TraceAll` | `TraceAllAsync(request)` with received context | JSON array |
+| `GET /pingtrace/Discover` | `IPingTraceDiscovery.DiscoverAsync()` | Discovery report |
+| `POST /pingtrace/Discover` | `DiscoverAsync(request)` | Discovery report |
+| `POST /pingtrace/TraceRoute` | `IPingTraceRouter.TraceRouteAsync(request)` | JSON array |
 
 The endpoint adapter resolves `IPingTrace` from the request's services.
 For trace requests, it passes `HttpContext.RequestAborted` to the runtime.
 
-The current implementation explicitly maps GET endpoints and POST TraceAll. HEAD support
+The implementation maps GET Ping/Trace/TraceAll/Discover and POST TraceAll/Discover/TraceRoute. HEAD support
 has been discussed but is not implemented.
 
 ### Authorization
@@ -200,7 +204,7 @@ endpoint conventions to the group:
 app.MapPingTrace().RequireAuthorization();
 ```
 
-This applies authorization to Ping, Trace, and both TraceAll endpoints. The host must configure
+This applies authorization to Ping, Trace, TraceAll, Discover, and TraceRoute endpoints. The host must configure
 the corresponding authentication and authorization services.
 
 Separate anonymous Ping and protected Trace mapping remains planned work.
@@ -269,8 +273,8 @@ The remote application continues traversal using the received context. Both
 paths are independently configurable, and recursive requests never fall back
 to local Trace when the remote endpoint is unavailable.
 
-It does not replace the remote application's name with the local
-destination alias.
+It assigns the local destination alias to the first remote result. Descendant
+names and all other diagnostic fields remain unchanged.
 
 Each destination can configure its own base address and client behavior.
 `AddHttpDestination()` returns `IHttpClientBuilder`, allowing the application
@@ -287,7 +291,7 @@ The sample frontend registers a destination named `WeatherApiClient`.
 Its base address is `https+http://apiservice`, using service discovery
 configured by the sample's service defaults.
 
-The API service registers a default leaf runtime and maps its own
+The API service registers its runtime and dependency connectors and maps its own
 PingTrace endpoints.
 
 The following diagram represents runtime communication:
@@ -323,7 +327,7 @@ API's recursive endpoint and then its configured `ActiveDirectory`,
 use in-memory simulations in this sample; SQL Server remains a real dependency.
 
 Aspire service discovery resolves the service address. It is independent
-of the PingTrace destination discovery capability excluded from version 1.
+of PingTrace discovery, which enumerates registered aliases and routes.
 
 ## Timing boundaries
 
@@ -346,13 +350,15 @@ It does not yet use a monotonic timer.
 
 ## Failure behavior
 
-The default runtime propagates connector failures and cancellation.
-It does not return a partial successful collection when a connector fails.
+Handled connector failures return structured failed results and permit continued
+traversal. Unexpected exceptions and cancellation propagate without returning
+accumulated results. Routing errors are separate structured exceptions.
 
 At the HTTP boundary:
 
 - An empty destination query produces status 400.
 - `KeyNotFoundException` from destination execution produces status 404.
+- `TraceRoutingException` maps to 404, 409, 503, or 501 according to its code.
 - Other exceptions propagate to the host's exception handling.
 
 The current handler catches `KeyNotFoundException` around the complete
@@ -388,8 +394,6 @@ TraceAll over registered connectors.
 
 It does not yet provide:
 
-- Destination discovery.
-- Automatic multi-hop destination routing.
 - A branching graph result model.
 - Structured object payloads.
 - Trace construction helpers.
@@ -407,3 +411,11 @@ system while PingTrace supplies diagnostic observations.
 - [Distributed hosting](DISTRIBUTED-HOSTING.md)
 - [Security](SECURITY.md)
 - [Capability boundaries](../design/CAPABILITY-BOUNDARIES.md)
+
+## Discovery and routing in 0.3.0
+
+The default runtime implements optional discovery and routed-trace interfaces.
+Named Trace retains local/direct precedence and discovers indirect destinations
+when needed. Resolution requires complete discovery with one distinct route.
+See [discovery and routing](DISCOVERY-AND-ROUTING.md) for contracts, endpoint
+responses, owner-defined names, cancellation, limits, and migration behavior.

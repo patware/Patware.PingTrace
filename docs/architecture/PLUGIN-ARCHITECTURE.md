@@ -3,7 +3,8 @@
 PingTrace uses compiled libraries and dependency injection for extensibility.
 
 Applications register the dependencies they want to trace. There is no
-dynamic plugin loader, assembly scanning, or destination discovery endpoint.
+dynamic plugin loader or assembly scanning. Discovery enumerates explicitly
+registered destinations through optional connector capabilities.
 
 ## Choose the extension point
 
@@ -206,9 +207,11 @@ Do not capture a scoped dependency in a singleton connector.
 
 ### Failure and cancellation
 
-The runtime awaits the selected connector and propagates failures.
+The runtime awaits the selected connector and includes failed diagnostic results.
+Unexpected exceptions and cancellation propagate.
 
-It does not currently produce partial results or a structured failure node.
+Connectors report handled operational failures through `TraceResult.Fail(...)`.
+A propagated exception stops execution without returning accumulated results.
 A connector that returns an empty collection produces a destination trace
 containing only the caller's local result; it does not explicitly report
 a dependency failure.
@@ -232,7 +235,7 @@ The default runtime appends them after its local result in the order
 provided. It does not interpret their names as instructions to invoke
 additional connectors.
 
-For named destination Trace, the built-in HTTP adapter returns one remote result.
+For direct destination Trace, the built-in HTTP adapter returns one remote result.
 For TraceAll, it sends the traversal context to the remote recursive endpoint
 and returns that application's complete result array.
 
@@ -378,8 +381,8 @@ suite also exercises an adapter against an in-memory PingTrace endpoint.
 
 ## Current boundaries
 
-There is no destination discovery API or dynamic adapter loading. Recursive
-traversal is available through the explicit TraceAll operation.
+Discovery and explicit routed tracing are optional capabilities in 0.3.0.
+Dynamic adapter loading is not provided. TraceAll remains a separate operation.
 
 Adapters are explicitly registered by the application.
 
@@ -393,3 +396,11 @@ Planned adapters and helper APIs are described in
 - [Definitions](PINGTRACE-DEFINITIONS.md)
 - [Distributed hosting](DISTRIBUTED-HOSTING.md)
 - [Security](SECURITY.md)
+
+## Discovery and routing in 0.3.0
+
+The default runtime implements optional discovery and routed-trace interfaces.
+Named Trace retains local/direct precedence and discovers indirect destinations
+when needed. Resolution requires complete discovery with one distinct route.
+See [discovery and routing](DISCOVERY-AND-ROUTING.md) for contracts, endpoint
+responses, owner-defined names, cancellation, limits, and migration behavior.
