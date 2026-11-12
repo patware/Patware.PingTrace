@@ -1,6 +1,7 @@
 using AspireAppSample.Web;
 using AspireAppSample.Web.Components;
 
+using PingTrace.Adapter.RedisCache;
 using PingTrace.Adapter.HttpClient;
 using PingTrace.AspNetCore;
 using PingTrace.Runtime;
@@ -27,14 +28,17 @@ builder.Services.AddHttpClient<WeatherApiClient>(client =>
 builder.Services.AddPingTrace(pingTrace =>
 {
 #pragma warning disable EXTEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-    pingTrace.AddHttpDestination(nameof(WeatherApiClient), client =>
-    {
-        client.BaseAddress = apiServiceUri;
-        client.Timeout = TimeSpan.FromSeconds(5);
-    })
+    pingTrace.AddHttpDestination(
+        name: "WeatherApiClient",
+        configureClient: client =>
+            {
+                client.BaseAddress = apiServiceUri;
+                client.Timeout = TimeSpan.FromSeconds(5);
+            })
     .RemoveAllResilienceHandlers();
 #pragma warning restore EXTEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 
+    pingTrace.AddRedisCacheDestination("RedisCache");
 });
 
 var app = builder.Build();

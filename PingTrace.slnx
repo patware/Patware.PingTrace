@@ -22,9 +22,11 @@
     <Project Path="tests/PingTrace.Adapter.EntityFramework.Tests/PingTrace.Adapter.EntityFramework.Tests.csproj" Id="a05b592d-cd14-4223-93b1-659341d469dd" />
     <Project Path="tests/PingTrace.Adapter.HttpClient.Tests/PingTrace.Adapter.HttpClient.Tests.csproj" Id="f97d74fc-e99e-472f-8c5c-1ad0e3762f89" />
     <Project Path="tests/PingTrace.Adapter.MicrosoftGraph.Tests/PingTrace.Adapter.MicrosoftGraph.Tests.csproj" Id="3cc7b174-1f0d-4f43-b763-42d8f7f66f75" />
+    <Project Path="tests/PingTrace.Adapter.RedisCache.Tests/PingTrace.Adapter.RedisCache.Tests.csproj" Id="caead39b-dcbf-4a07-956b-978177ebe4ee" />
     <Project Path="tests/PingTrace.AspNetCore.Tests/PingTrace.AspNetCore.Tests.csproj" Id="536389cb-14e8-45a2-8fd8-509f24b10605" />
     <Project Path="tests/PingTrace.Runtime.Tests/PingTrace.Runtime.Tests.csproj" Id="60e53ea6-77f2-4cf6-83db-f23da98b4793" />
   </Folder>
+  <Project Path="src/PingTrace.Adapter.RedisCache/PingTrace.Adapter.RedisCache.csproj" Id="de58bfaf-e5c6-49d8-a9d5-d21855e36f01" />
   <Project Path="src/PingTrace.Adapter.ActiveDirectory/PingTrace.Adapter.ActiveDirectory.csproj" Id="112a6a9b-c445-4309-819d-c532a20fb109" />
   <Project Path="src/PingTrace.Adapter.EntityFramework/PingTrace.Adapter.EntityFramework.csproj" Id="65636246-b3cd-4e01-a4f8-2f6dc17b1348" />
   <Project Path="src/PingTrace.Adapter.HttpClient/PingTrace.Adapter.HttpClient.csproj" Id="8e78fee2-fd74-482a-8a89-e76b440bf151" />

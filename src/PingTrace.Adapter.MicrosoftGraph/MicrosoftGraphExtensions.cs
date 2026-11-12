@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Graph;
 
 using PingTrace.Core;
@@ -48,9 +49,10 @@ public static class MicrosoftGraphExtensions
 
         builder.Services.AddScoped<IPingTraceConnector>(provider =>
             new GraphOrganizationPingTraceConnector(
-                name,
-                () => provider.GetRequiredService<GraphServiceClient>(),
-                configuredIdentity));
+                name: name,
+                resolveClient: () => provider.GetRequiredService<GraphServiceClient>(),
+                configuredIdentity: configuredIdentity,
+                logger: provider.GetRequiredService<ILogger<GraphOrganizationPingTraceConnector>>()));
 
         return builder;
     }

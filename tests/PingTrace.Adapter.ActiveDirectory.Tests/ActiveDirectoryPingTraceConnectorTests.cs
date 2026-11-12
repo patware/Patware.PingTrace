@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using PingTrace.Tests;
 using System.Text.Json;
 
 using FluentAssertions;
@@ -56,6 +58,7 @@ public sealed class ActiveDirectoryPingTraceConnectorTests
         results.Should().HaveCount(2);
 
         TraceResult dependency = results[1];
+        dependency.Status.Should().Be(TraceStatus.Succeeded);
         dependency.Name.Should().Be("ActiveDirectory");
         dependency.MachineName.Should().Be("dc01.contoso.example");
         dependency.Identity.Should().Be(@"CONTOSO\sample-app");
@@ -139,12 +142,15 @@ public sealed class ActiveDirectoryPingTraceConnectorTests
         IPingTrace sut = scope.ServiceProvider.GetRequiredService<IPingTrace>();
 
         // Act
-        Func<Task> act = () => sut.TraceAsync(
+        IReadOnlyList<TraceResult> results = await sut.TraceAsync(
             "ActiveDirectory",
             TestContext.CancellationToken);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        results[1].Status.Should().Be(TraceStatus.Failed);
+        results[1].FailureKind.Should().Be(TraceFailureKind.InvalidResponse);
+        results[1].ErrorCode.Should().Be("Directory.IncompleteDiagnostics");
+        results[1].Message.Should().NotBeNullOrWhiteSpace();
     }
 
     /// <summary>
@@ -198,10 +204,51 @@ public sealed class ActiveDirectoryPingTraceConnectorTests
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    /// <summary>
+    /// Verifies LDAP classifications and preservation of the original exception in logs.
+    /// </summary>
+    /// <param name="code">The LDAP client error code.</param>
+    /// <param name="kind">The expected failure classification.</param>
+    [TestMethod]
+    [DataRow(49, TraceFailureKind.Authentication)]
+    [DataRow(50, TraceFailureKind.Authorization)]
+    [DataRow(85, TraceFailureKind.Timeout)]
+    [DataRow(81, TraceFailureKind.Connection)]
+    [DataRow(91, TraceFailureKind.Connection)]
+    [DataRow(82, TraceFailureKind.Unknown)]
+    public async Task LdapFailure_ReturnsResultAndLogsOriginalException(int code, TraceFailureKind kind)
+    {
+        // Arrange
+        using CapturingLoggerProvider logs = new();
+        System.DirectoryServices.Protocols.LdapException exception = new(code, "Internal LDAP details");
+        using ServiceProvider provider = CreateProvider(
+            _ => Task.FromException<ActiveDirectoryDiagnostics>(exception), logs);
+        using IServiceScope scope = provider.CreateScope();
+        IPingTrace sut = scope.ServiceProvider.GetRequiredService<IPingTrace>();
+
+        // Act
+        IReadOnlyList<TraceResult> results = await sut.TraceAsync("ActiveDirectory", TestContext.CancellationToken);
+
+        // Assert
+        results[1].Status.Should().Be(TraceStatus.Failed);
+        results[1].FailureKind.Should().Be(kind);
+        results[1].ErrorCode.Should().Be($"Ldap.Client.{code}");
+        results[1].Message.Should().NotContain("Internal LDAP details");
+        results[1].Payload.Should().BeEmpty();
+        logs.Warnings.Should().ContainSingle();
+        logs.Warnings.Single().Exception.Should().BeSameAs(exception);
+        logs.Warnings.Single().Message.Should().Contain($"Ldap.Client.{code}");
+    }
+
     private static ServiceProvider CreateProvider(
-        Func<CancellationToken, Task<ActiveDirectoryDiagnostics>> read)
+        Func<CancellationToken, Task<ActiveDirectoryDiagnostics>> read,
+        CapturingLoggerProvider? logs = null)
     {
         ServiceCollection services = new();
+        if (logs is not null)
+        {
+            services.AddLogging(builder => builder.AddProvider(logs));
+        }
 
         services.AddScoped<StubReader>(_ => new StubReader(read));
 

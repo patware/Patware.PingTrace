@@ -73,24 +73,20 @@ A future graph feature may require explicit relationship information.
 That need should be addressed directly rather than assuming a permanent
 application GUID solves it.
 
-## 4. Exclude destination discovery from version 1
+## 4. Discover registered destinations on demand
 
-**Decision:** Require explicit dependency registration and omit destination
-discovery and its metadata model.
+**Decision (0.3.0):** Add recursive discovery and explicit routed tracing while
+keeping immediate dependency registration application-owned. This supersedes
+the initial exclusion of discovery.
 
-**Justification:** The first version needs to invoke configured dependencies,
-not publish a catalog of available targets and expected values.
+**Justification:** A frontend can diagnose a dependency owned by an API without
+knowing that API's transitive topology at compile time. Discovery avoids running
+all diagnostic probes simply to learn a route.
 
-**Consequences:**
-
-- There is no destination-listing endpoint.
-- Callers use aliases supplied by application configuration or documentation.
-- Expected values and monitoring thresholds are maintained outside the
-  current runtime.
-- Host-provided address resolution remains available.
-
-Aspire service discovery is independent of this decision. Resolving a
-logical service address does not introduce a PingTrace discovery API.
+**Consequences:** Discovery is uncached and requires complete information before
+automatic unique-route selection. Ambiguity and incomplete branches are reported
+explicitly. Aspire still resolves service addresses; PingTrace discovers aliases
+and routes. Expected values and monitoring policy remain application-owned.
 
 ## 5. Register dependencies through a builder
 
@@ -158,7 +154,8 @@ while remaining unambiguous.
 The local application name is also accepted as a destination, producing
 a one-element collection containing the local trace.
 
-Destination aliases do not overwrite remote application names.
+As of 0.3.0, the owner's alias replaces the immediate HTTP result's name.
+Descendant names remain owned by the applications registering them.
 
 ## 8. Use scoped runtime and connector registrations
 
@@ -231,13 +228,14 @@ client configuration while participating in the host's HTTP infrastructure.
 The current internal client name is `PingTrace.Http:<destination name>`.
 An overload accepting an existing named-client name is not implemented.
 
-## 12. Keep named destination Trace local at the remote application
+## 12. Keep direct destination Trace local at the remote application
 
-**Decision:** For named destination Trace, the HTTP connector requests the configured local Trace
+**Decision:** For an immediate HTTP destination, the connector requests the configured local Trace
 endpoint, defaulting to `/pingtrace/Trace`.
 
-**Justification:** Named Trace retains its limited execution cost and existing
-response contract. Callers choose TraceAll explicitly when they need recursion.
+**Justification:** A direct match retains its limited execution cost and existing
+response contract. TraceAll visits every branch; indirect named Trace uses
+discovery and explicit forwarding to execute only its resolved path.
 
 **Consequences:**
 
@@ -249,28 +247,20 @@ response contract. Callers choose TraceAll explicitly when they need recursion.
 
 A null response or a result with an empty name is rejected.
 
-## 13. Propagate failures and cancellation
+## 13. Report operational failures and preserve cancellation
 
-**Decision:** Let dependency failures and cancellation propagate rather
-than manufacture successful diagnostic results.
+**Decision (0.3.0):** Known operational failures become structured failed
+`TraceResult` entries. Unexpected exceptions and cancellation propagate.
 
-**Justification:** A caller must be able to distinguish a completed diagnostic
-from an operation that failed.
+**Justification:** An unsuccessful diagnostic is useful evidence, not a reason
+to hide the remaining dependencies. Status, classification, code, and message
+explain failure while preserving collected metadata and payload.
 
-**Consequences:**
-
-- The runtime does not currently return partial result collections.
-- The HTTP adapter passes cancellation to its outgoing operation.
-- Custom connectors must cooperate with cancellation.
-- The host determines responses for failures not explicitly translated
-  by the endpoint adapter.
-
-The destination endpoint currently translates `KeyNotFoundException`
-into status 404. Because the catch surrounds the entire operation,
-that translation also applies if a custom connector throws the exception.
-
-A dedicated distinction between lookup failures and connector failures
-could refine this behavior later.
+**Consequences:** TraceAll continues after failed results while time remains.
+Thrown exceptions stop traversal without returning accumulated results. Logging
+retains handled exceptions; public results contain selected explanations. Routing
+failures use `TraceRoutingException` and a separate structured HTTP error contract.
+The endpoint retains its legacy `KeyNotFoundException` catch for custom implementations.
 
 ## 14. Keep authorization and monitoring policy with the host
 
@@ -287,7 +277,7 @@ expected observations, and recovery actions.
 - Reported runtime identity is diagnostic data, not caller authentication.
 - Incoming access and outgoing credentials are configured separately.
 
-The current mapping returns one group containing Ping, Trace, and both TraceAll endpoints.
+The current mapping returns one group containing Ping, Trace, TraceAll, Discover, and TraceRoute endpoints.
 Independent authorization for those endpoints remains planned work.
 
 ## 15. Organize tests around library responsibilities
@@ -347,7 +337,7 @@ these shapes indefinitely.
 | Payload | String; application assembly version or connector-specific diagnostics | Structured payload |
 | Duration | Difference between `DateTime.Now` timestamps | Monotonic duration measurement |
 | Result relationships | Flat ordered collection | Explicit paths or relationships if required by graph features |
-| HTTP methods | GET Ping/Trace/TraceAll; POST TraceAll | HEAD support on Ping |
+| HTTP methods | GET Ping/Trace/TraceAll/Discover; POST TraceAll/Discover/TraceRoute | HEAD support on Ping |
 | Authorization mapping | One shared group | Independent Ping and diagnostic configuration |
 
 Changing the local response shape requires coordinated changes to Core,

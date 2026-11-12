@@ -90,6 +90,7 @@ $libraries = @(
     'PingTrace.Adapter.EntityFramework'
     'PingTrace.Adapter.MicrosoftGraph'
     'PingTrace.Adapter.ActiveDirectory'
+    'PingTrace.Adapter.RedisCache'
 )
 
 # Match references by resolved project path, rather than filename alone.
@@ -173,7 +174,7 @@ $symbols = @(Get-ChildItem -LiteralPath $PackageDirectory -Filter '*.snupkg')
 
 if ($packages.Count -ne $dependencies.Count -or
     $symbols.Count -ne $dependencies.Count) {
-    throw "Expected seven .nupkg and seven .snupkg files; found $($packages.Count) and $($symbols.Count)."
+    throw "Expected eight .nupkg and eight .snupkg files; found $($packages.Count) and $($symbols.Count)."
 }
 
 $releaseUrl = "https://github.com/patware/Patware.PingTrace/releases/tag/v$version"

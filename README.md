@@ -12,19 +12,19 @@ and a diagnostic payload.
 
 ## Install
 
-PingTrace 0.1.0 targets .NET 10.
+PingTrace 0.3.0 targets .NET 10.
 
 For an ASP.NET Core application:
 
 ```shell
-dotnet add package Patware.PingTrace.Runtime --version 0.1.0
-dotnet add package Patware.PingTrace.AspNetCore --version 0.1.0
+dotnet add package Patware.PingTrace.Runtime --version 0.3.0
+dotnet add package Patware.PingTrace.AspNetCore --version 0.3.0
 ```
 
 To trace another PingTrace application over HTTP:
 
 ```shell
-dotnet add package Patware.PingTrace.Adapter.HttpClient --version 0.1.0
+dotnet add package Patware.PingTrace.Adapter.HttpClient --version 0.3.0
 ```
 
 NuGet package IDs use the `Patware.PingTrace` prefix.
@@ -62,6 +62,9 @@ The libraries currently target .NET 10.
 | `GET /pingtrace/Trace?destination=NAME` | A JSON array containing the local result and results from the selected destination |
 | `GET /pingtrace/TraceAll` | JSON array containing the local result followed by dependency results |
 | `POST /pingtrace/TraceAll` | The same recursive result array |
+| `GET /pingtrace/Discover` | Starts discovery; returns routes, completeness, and issues. |
+| `POST /pingtrace/Discover` | Continues discovery with request context. |
+| `POST /pingtrace/TraceRoute` | Executes an explicit route and returns a trace array. |
 
 The default application name comes from the managed host's entry assembly.
 No application ID or configuration callback is required.
@@ -113,10 +116,10 @@ Frontend result
 API result
 ```
 
-`ApiService` is a local destination alias. The remote result retains the
-remote application's own name.
+`ApiService` is the owner's destination alias. The HTTP connector assigns it
+to the first remote result; descendant names remain those assigned by their owners.
 
-For named destination Trace, the built-in HTTP adapter requests a local trace from the remote application.
+For direct destination Trace, the built-in HTTP adapter requests a local trace from the remote application.
 It does not automatically trace that application's dependencies.
 
 The registration callback receives a `PingTraceBuilder` for registering
@@ -195,7 +198,8 @@ For the Aspire sample, calling the frontend returns results for:
 
 ```text
 AspireAppSample.Web
-AspireAppSample.ApiService
+RedisCache
+WeatherApiClient
 ActiveDirectory
 ApiServiceDb
 MicrosoftGraph
@@ -319,6 +323,7 @@ notifications, and recovery actions.
 | `PingTrace.Adapter.EntityFramework` | SQL Server diagnostics through a registered DbContext |
 | `PingTrace.Adapter.MicrosoftGraph` | Organization diagnostics through a registered GraphServiceClient |
 | `PingTrace.Adapter.ActiveDirectory` | Domain diagnostics through a registered directory reader |
+| `PingTrace.Adapter.RedisCache` | Redis ping diagnostics through a registered IConnectionMultiplexer |
 
 Registration belongs to Runtime so non-HTTP hosts can use it. HTTP routing
 belongs to AspNetCore. Outgoing communication belongs to adapters.
@@ -335,7 +340,7 @@ app.MapPingTrace().RequireAuthorization();
 ```
 
 With authentication and authorization configured by the host, this protects
-Ping, Trace, and both TraceAll endpoints. Separate anonymous Ping and protected Trace mapping
+Ping, Trace, TraceAll, Discover, and TraceRoute endpoints. Separate anonymous Ping and protected Trace mapping
 is a future API improvement.
 
 ## Current boundaries and direction
@@ -344,7 +349,8 @@ The current implementation supports Ping, local Trace, named destination Trace,
 recursive TraceAll, HTTP dependencies, SQL Server diagnostics through EF Core,
 Microsoft Graph organization diagnostics, and Active Directory domain diagnostics.
 
-Version 1 excludes destination discovery.
+Version 0.3.0 adds destination discovery and routed tracing. See the
+[discovery and routing guide](docs/architecture/DISCOVERY-AND-ROUTING.md).
 
 Further work includes:
 
@@ -369,3 +375,35 @@ distinction between implemented behavior and planned work.
 - [Testing](tests/README.md)
 - [Contributing](CONTRIBUTING.md)
 - [License](LICENSE)
+
+## Discovery and indirect destinations in 0.3.0
+
+Request `GET /pingtrace/Discover` to list registered destination routes without
+executing leaf diagnostic probes. From the Aspire frontend,
+`GET /pingtrace/Trace?destination=ActiveDirectory` discovers and executes
+`WeatherApiClient -> ActiveDirectory`. Direct registrations retain precedence.
+
+Automatic resolution requires complete discovery and a unique route. Routing
+errors return structured JSON; diagnostic failures remain `TraceResult` entries.
+See [discovery and routing](docs/architecture/DISCOVERY-AND-ROUTING.md) for explicit
+POST routes, error codes, deadlines, and compatibility.
+
+## Add a Redis dependency
+
+Reference `Patware.PingTrace.Adapter.RedisCache` and register an
+`IConnectionMultiplexer` separately. The project and namespace retain the
+spelling `Adapter`.
+
+```csharp
+using PingTrace.Adapter.RedisCache;
+
+builder.Services.AddPingTrace(pingTrace =>
+{
+    pingTrace.AddRedisCacheDestination("RedisCache");
+});
+```
+
+The connector resolves the existing connection when traced, returns `PONG`
+on success, and does not own or dispose the connection. See the
+[Redis guide](src/PingTrace.Adapter.RedisCache/README.md) for failure handling
+and timeout boundaries.

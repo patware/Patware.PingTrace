@@ -39,8 +39,9 @@ When the destination identifies a connector, the runtime:
 The current .NET method returns `Task<IReadOnlyList<TraceResult>>`.
 The HTTP endpoint returns a JSON array.
 
-Unknown destinations raise `KeyNotFoundException` in the default runtime.
-The HTTP destination handler translates that exception into status 404.
+Names without a local or direct match trigger discovery. The runtime requires
+complete discovery and one distinct route; resolution failures raise
+`TraceRoutingException` with a structured error.
 
 ## Application name
 
@@ -75,7 +76,8 @@ relationship fields.
 A destination name is a local alias for a configured dependency.
 
 For example, `WeatherApiClient` can identify the API dependency in the
-frontend even though the remote result reports `AspireAppSample.ApiService`.
+frontend. Its HTTP result uses `WeatherApiClient`; a local request made directly
+to the API uses its entry-assembly name.
 
 Names must be nonempty, unique without regard to case, and different from
 the local application name. The default runtime validates these rules
@@ -99,7 +101,7 @@ automatically traverse them.
 
 The built-in HTTP adapter uses a named client from `IHttpClientFactory`.
 
-For named destination Trace, its default remote path is `/pingtrace/Trace`. It expects the remote
+For direct destination Trace, its default remote path is `/pingtrace/Trace`. It expects the remote
 endpoint to return a single local trace object with a nonempty name.
 
 The adapter wraps that object in a collection for the runtime.
@@ -163,7 +165,8 @@ The callback does not execute trace operations or configure
 
 ## Endpoint mapping
 
-`MapPingTrace()` maps GET Ping, Trace, and TraceAll, plus POST TraceAll, under
+`MapPingTrace()` maps GET Ping, Trace, TraceAll, and Discover, plus POST TraceAll,
+Discover, and TraceRoute, under
 `/pingtrace`.
 
 A string argument changes the prefix:
@@ -173,7 +176,7 @@ app.MapPingTrace("/diagnostics");
 ```
 
 It returns a route group to which the host can apply endpoint conventions.
-Authorization applied to that group affects Ping, Trace, and both TraceAll endpoints.
+Authorization applied to that group affects Ping, Trace, TraceAll, Discover, and TraceRoute endpoints.
 
 Explicit HEAD support, mapping-options objects, and separate authorization
 builders are not implemented.
@@ -188,7 +191,8 @@ The default runtime visits connectors sequentially in case-insensitive ordinal
 name order. Shared dependencies are visited per path. The request carries the
 remaining depth, absolute deadline, and ancestor identities for cycle detection.
 Defaults are eight connector hops and a thirty-second cooperative deadline.
-Failures stop traversal rather than returning partial results.
+Failed results permit continued traversal. Propagated exceptions and cancellation
+stop traversal without returning accumulated results.
 
 GET TraceAll starts a traversal; POST TraceAll continues one using JSON context.
 Both return flat arrays. See [recursive execution](PINGTRACE.md#recursive-traceall)
@@ -201,3 +205,11 @@ PingTrace provides responses and diagnostic observations.
 The application or monitoring system defines polling schedules, expected
 values, thresholds, health classifications, notifications, and recovery
 actions.
+
+## Discovery and routing in 0.3.0
+
+The default runtime implements optional discovery and routed-trace interfaces.
+Named Trace retains local/direct precedence and discovers indirect destinations
+when needed. Resolution requires complete discovery with one distinct route.
+See [discovery and routing](DISCOVERY-AND-ROUTING.md) for contracts, endpoint
+responses, owner-defined names, cancellation, limits, and migration behavior.

@@ -58,10 +58,12 @@ The implementation in `PingTrace.Runtime` supplies the following behavior:
 - A registered dependency returns the local result followed by the connector's
   results.
 - Destination names are matched without regard to case.
-- An unknown destination throws `KeyNotFoundException`.
+- An indirect destination triggers discovery and unique-route resolution.
+- Unresolved, ambiguous, or incomplete resolution throws `TraceRoutingException`.
 - TraceAll visits destinations sequentially in case-insensitive ordinal name
   order and returns the local result followed by each destination's results.
-- Recursive failures propagate; partial result collections are not returned.
+- Failed diagnostic results are returned normally and allow traversal to continue.
+- Exceptions thrown by connectors propagate; accumulated partial results are not returned.
 
 These are behaviors of the default runtime, rather than implementations
 provided by this package.
@@ -116,12 +118,16 @@ the existing operations.
 
 | Member | Meaning |
 | --- | --- |
-| `Name` | Application name or destination alias supplied by the implementation. |
+| `Name` | Owner's destination alias; the local root uses its application name. |
 | `MachineName` | Machine or server identification supplied by the implementation. |
 | `Identity` | Execution or connection identity supplied by the implementation. |
 | `StartedAt` | Start timestamp, initialized to `DateTime.Now` by the constructor. |
-| `FinishedAt` | Completion timestamp, assigned by `Finish`. |
+| `FinishedAt` | Completion timestamp, assigned by `Finish` or `Fail`. |
 | `Payload` | Diagnostic string assigned by `Finish`. |
+| `Status` | `Unknown`, `Succeeded`, or `Failed` for this result's operation. |
+| `FailureKind` | Classification supported by the observed failure evidence. |
+| `ErrorCode` | Stable connector-defined failure identifier. |
+| `Message` | Selected human-readable failure explanation. |
 | `Elapsed` | Difference between `FinishedAt` and `StartedAt`. |
 
 The constructor initializes the start timestamp. It does not populate the
@@ -143,8 +149,15 @@ TraceResult result = new TraceResult
 result.Finish("Pong");
 ```
 
-`Finish(string payload)` assigns the payload and captures the completion time.
-Read `Elapsed` after finishing the result.
+`Finish(string payload)` assigns the payload, marks success, clears earlier
+failure details, and captures the completion time. `Fail(failureKind, errorCode,
+message)` marks failure and captures completion while preserving existing payload
+and identity metadata. Read `Elapsed` after completing the result.
+
+`Unknown` is the default, including when an older HTTP producer omits status.
+It must not be interpreted as success. Status describes this entry's operation,
+not the aggregate health of descendants. Successful connectivity alone does not
+prove that the responding target matches the intended environment.
 
 The model is mutable. Its payload is currently a string, and it has no
 application ID or graph relationship fields.
@@ -162,8 +175,10 @@ timer. Clock adjustments can affect the calculated duration.
 
 ## Scope
 
-The contracts expose explicit recursive TraceAll. They do not expose automatic
-dependency discovery or destination-path traversal.
+The contracts expose TraceAll plus optional discovery and explicit routing through
+`IPingTraceDiscovery`, `IDiscoverablePingTraceConnector`, `IPingTraceRouter`, and
+`IRoutedPingTraceConnector`. These capabilities do not add mandatory members to
+`IPingTrace` or `IPingTraceConnector`.
 
 A connector returning multiple results does not itself imply recursive
 traversal. Traversal behavior depends on the implementation and connector.
@@ -187,3 +202,19 @@ transport-independent.
 - [Architecture](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/ARCHITECTURE.md)
 - [Execution model](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/PINGTRACE.md)
 - [Connector architecture](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/PLUGIN-ARCHITECTURE.md)
+
+## Discovery and routing contracts in 0.3.0
+
+`IPingTraceDiscovery.DiscoverAsync` returns a `DiscoveryResult` with
+`ApplicationName`, `IsComplete`, `Routes`, and `Issues`. Each
+`DiscoveredRoute` has a destination alias and ordered alias segments;
+`DiscoveryIssue` identifies a branch and its failure to complete discovery.
+
+`IPingTraceRouter.TraceRouteAsync` accepts a `TraceRouteRequest` containing
+segments, remaining depth, deadline, and ancestors. Results are local-first
+collections. `TraceRoutingException.Error` contains a `TraceRoutingError`
+with protocol, code, message, candidates, and issues.
+
+Connectors opt into `IDiscoverablePingTraceConnector` and
+`IRoutedPingTraceConnector` independently of ordinary leaf diagnostics.
+See the [routing guide](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/DISCOVERY-AND-ROUTING.md).

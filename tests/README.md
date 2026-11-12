@@ -12,6 +12,7 @@ The repository's `global.json` selects the test runner.
 | `PingTrace.AspNetCore.Tests` | Routing, response formats, invalid TraceAll POST validation, host error handling, and named-Trace adapter-to-endpoint compatibility |
 | `PingTrace.Adapter.EntityFramework.Tests` | Database result mapping, query failures, cancellation, and deferred context resolution |
 | `PingTrace.Adapter.MicrosoftGraph.Tests` | Organization request and result mapping, Graph errors, invalid responses, cancellation, deferred resolution, and client ownership |
+| `PingTrace.Adapter.RedisCache.Tests` | Redis ping outcomes, failure classification, logging, cancellation, and connection ownership without a live Redis server |
 | `PingTrace.Adapter.ActiveDirectory.Tests` | Domain result mapping, token forwarding, deferred reader resolution, original failures, incomplete results, and cooperative cancellation |
 
 The adapter-to-endpoint round-trip test currently belongs to
@@ -101,3 +102,17 @@ implemented endpoints alone do not establish end-to-end test coverage.
 A passing test run establishes the behavior covered by that run.
 Do not infer deployment readiness, package validity, or coverage percentages
 without performing the corresponding checks.
+
+## Version 0.3.0 naming regressions
+
+HTTP tests verify owner-defined aliases for direct and recursive results, including
+two destinations reporting the same remote application name. Routed tests verify
+that only the remote root is renamed and that descendant evidence and successful
+or failed outcomes are preserved. The ASP.NET Core round-trip test expects the
+configured alias, not the remote fixture's application name.
+
+Keep remote fixture names different from registered aliases so these tests detect
+regressions. Core result-model tests live in `PingTrace.Runtime.Tests`.
+New discovery and routing features should also be validated for incomplete and
+ambiguous resolution, cycles, malformed requests, and older peers; this list is
+a verification checklist, not a claim of complete automated coverage.

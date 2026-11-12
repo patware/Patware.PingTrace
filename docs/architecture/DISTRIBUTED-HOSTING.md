@@ -40,10 +40,9 @@ flowchart LR
     Connector --> API["API local Trace"]
 ```
 
-Redis is part of the application's topology, but no PingTrace connector
-is registered for it.
-
-The sample API currently has no database dependency.
+The frontend registers `RedisCache` and `WeatherApiClient`. The API registers
+`ApiServiceDb`, `MicrosoftGraph`, and `ActiveDirectory`. SQL Server and Redis
+are real dependencies; Graph and AD use simulations.
 
 ## AppHost resource references
 
@@ -162,7 +161,8 @@ different responsibilities:
 | Service discovery | Resolve a logical service address |
 | PingTrace registration | Associate a local diagnostic alias with a connector |
 
-PingTrace does not expose a destination-discovery endpoint.
+PingTrace exposes GET/POST Discover to enumerate registered diagnostic routes;
+it does not replace Aspire's service-address resolution.
 
 ## Names used in a trace
 
@@ -178,8 +178,9 @@ Several names participate in the sample:
 
 The default application names come from the managed entry assemblies.
 
-The names need not match because they serve different purposes. Registering
-the alias `WeatherApiClient` does not rename the API's trace result.
+The names serve different purposes. The frontend's HTTP connector assigns
+`WeatherApiClient` to the API result. Direct local Trace on the API still uses
+its entry-assembly name.
 
 ## Request path
 
@@ -407,3 +408,11 @@ monitoring system.
 - [Security](SECURITY.md)
 - [Observability](OBSERVABILITY.md)
 - [Capability boundaries](../design/CAPABILITY-BOUNDARIES.md)
+
+## Discovery and routing in 0.3.0
+
+The default runtime implements optional discovery and routed-trace interfaces.
+Named Trace retains local/direct precedence and discovers indirect destinations
+when needed. Resolution requires complete discovery with one distinct route.
+See [discovery and routing](DISCOVERY-AND-ROUTING.md) for contracts, endpoint
+responses, owner-defined names, cancellation, limits, and migration behavior.

@@ -16,6 +16,7 @@ Library tests live in projects corresponding to the libraries they exercise:
 - `PingTrace.Adapter.EntityFramework.Tests`
 - `PingTrace.Adapter.MicrosoftGraph.Tests`
 - `PingTrace.Adapter.ActiveDirectory.Tests`
+- `PingTrace.Adapter.RedisCache.Tests`
 
 The adapter-to-endpoint round-trip test currently lives in
 `PingTrace.AspNetCore.Tests`.

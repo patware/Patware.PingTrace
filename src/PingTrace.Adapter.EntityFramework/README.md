@@ -125,10 +125,23 @@ select different connection strings.
 
 ## Failures, cancellation, and timing
 
-Context resolution, configuration, and query exceptions propagate to the
-caller. The adapter does not convert failures into successful diagnostic rows.
+`TimeoutException` becomes a failed `Timeout` result. Other `DbException`
+instances become failed `Unknown` results containing the provider exception type
+and generic error code. This fallback does not classify SQL Server-specific
+authentication, authorization, or timeout codes; provider timeouts represented
+as `DbException` remain `Unknown`. Unexpected exceptions, including unhandled
+resolution or configuration errors, propagate.
 
-The cancellation token is passed to SingleAsync. In-flight cancellation
+The query reads at most two rows. A count other than one produces a failed
+`InvalidResponse` result. Failure explanations are returned in `Message`, with
+`FailureKind` and `ErrorCode`; `Payload` remains diagnostic evidence.
+
+Every failed result is logged at Warning level with the destination, error code,
+and message. Handled exceptions are attached so their original details remain
+available through the host's configured logging pipeline. The host must configure
+a provider and filtering to retain logs.
+
+The cancellation token is passed to ToListAsync. In-flight cancellation
 depends on the database provider honoring it.
 
 The database result's duration includes context resolution and query execution.
@@ -156,7 +169,8 @@ using an in-memory SQLite provider and a command interceptor.
 
 The interceptor substitutes diagnostic rows or failures before the SQL
 Server-specific command executes. These tests cover materialization, result
-mapping, exception propagation, cancellation, and deferred context resolution.
+mapping, cancellation, and deferred context resolution. Failure assertions must
+distinguish handled database failures from unexpected exceptions that propagate.
 
 A substituted reader must match the generated command's projection order.
 The current projection uses Identity, MachineName, and Payload.
@@ -164,3 +178,13 @@ The current projection uses Identity, MachineName, and Payload.
 These isolated tests do not validate SQL Server syntax, authentication,
 permissions, or connectivity. Validate those against an actual SQL Server
 deployment.
+
+## Discovery and indirect tracing in 0.3.0
+
+This connector is a leaf. Discovery lists its registered alias without executing
+its diagnostic operation. A remote application can reach it through discovery and
+routed HTTP tracing when the owning application exposes the new endpoints. Its
+name remains the alias assigned by that owner. Discovery does not establish health;
+inspect the trace result's status and failure details when the probe executes.
+
+See [discovery and routing](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/DISCOVERY-AND-ROUTING.md).

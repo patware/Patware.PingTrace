@@ -1,4 +1,4 @@
-﻿<Project Sdk="MSTest.Sdk/4.5.2">
+﻿<Project Sdk="MSTest.Sdk/4.5.3">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -10,8 +10,8 @@
 
   <ItemGroup>
     <PackageReference Include="FluentAssertions" Version="8.11.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.14" />
-    <PackageReference Include="MSTest" Version="4.5.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.15" />
+    <PackageReference Include="MSTest" Version="4.5.3" />
   </ItemGroup>
 
   <ItemGroup>
@@ -27,15 +27,18 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="Microsoft.Testing.Extensions.TrxReport" Version="2.5.2" />
+    <PackageReference Update="Microsoft.Testing.Extensions.TrxReport" Version="2.5.3" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="MSTest.TestAdapter" Version="4.5.2" />
+    <PackageReference Update="MSTest.TestAdapter" Version="4.5.3" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Update="MSTest.TestFramework" Version="4.5.2" />
+    <PackageReference Update="MSTest.TestFramework" Version="4.5.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Shared\CapturingLoggerProvider.cs" Link="CapturingLoggerProvider.cs" />
+  </ItemGroup>
 </Project>

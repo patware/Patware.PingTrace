@@ -42,6 +42,9 @@ dependency tracing.
 | `GET /pingtrace/Trace?destination=NAME` | Traces the named destination and returns a result array. |
 | `GET /pingtrace/TraceAll` | Starts recursive traversal of registered destinations and returns an array. |
 | `POST /pingtrace/TraceAll` | Continues traversal using the supplied JSON request context. |
+| `GET /pingtrace/Discover` | Starts discovery; returns routes, completeness, and issues. |
+| `POST /pingtrace/Discover` | Continues discovery with request context. |
+| `POST /pingtrace/TraceRoute` | Executes an explicit route and returns a trace array. |
 
 Destination tracing requires a registered connector unless the destination
 matches the local application's name.
@@ -94,6 +97,7 @@ The current libraries target .NET 10.
 | `PingTrace.Adapter.EntityFramework` | SQL Server diagnostics through a registered DbContext. |
 | `PingTrace.Adapter.MicrosoftGraph` | Organization diagnostics through a registered GraphServiceClient. |
 | `PingTrace.Adapter.ActiveDirectory` | Domain diagnostics through a registered directory reader. |
+| `PingTrace.Adapter.RedisCache` | Redis diagnostics through a registered IConnectionMultiplexer. |
 
 Applications supply their destination addresses, authentication requirements,
 and authorization policies.
@@ -125,21 +129,22 @@ using the real connector with a substituted reader, without a domain controller.
 The implementation supports Ping, local Trace, explicitly named destination
 Trace, and [recursive TraceAll](architecture/PINGTRACE.md#recursive-traceall).
 
-Automatic dependency discovery, graph visualization, and built-in health-check
-integration are not currently implemented.
+Version 0.3.0 includes discovery of explicitly registered destinations and indirect
+tracing. Graph visualization and built-in health-check integration remain future work.
+See [discovery and routing](architecture/DISCOVERY-AND-ROUTING.md).
 
 The documentation distinguishes existing behavior from proposed capabilities.
 Design discussions do not imply that an API is available.
 
 ## API reference and documentation preview
 
-The current DocFX metadata configuration has no API input files configured.
-Generated API reference pages are therefore not yet established.
+DocFX metadata inputs include all `src/**/*.csproj` projects, targeting .NET 10
+in Release configuration. Generate metadata before building the documentation site.
 
 The Markdown guides describe the current implementation. See
 [Getting started](development/GETTING-STARTED.md#preview-the-documentation)
 for documentation preview instructions and the current API-generation
-limitations.
+workflow.
 
 ## Project
 

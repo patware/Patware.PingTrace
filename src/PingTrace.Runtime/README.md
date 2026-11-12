@@ -14,7 +14,7 @@ endpoints by itself.
 ## Install
 
 ```shell
-dotnet add package Patware.PingTrace.Runtime --version 0.1.0
+dotnet add package Patware.PingTrace.Runtime --version 0.3.0
 ```
 
 Targets .NET 10. C# namespaces remain `PingTrace.Runtime`.
@@ -108,8 +108,8 @@ the callback.
 
 ### Destination names
 
-`ApiService` is a local destination alias. The remote application reports its
-own application name in its trace result.
+`ApiService` is the owner's destination alias. The HTTP connector assigns this
+name to the immediate remote result while preserving descendant names and evidence.
 
 The default runtime compares destination names using
 `StringComparer.OrdinalIgnoreCase`.
@@ -233,13 +233,24 @@ For destination requests:
 | --- | --- |
 | Null destination | Throws `ArgumentNullException`. |
 | Empty or whitespace destination | Throws `ArgumentException`. |
-| Unknown destination | Throws `KeyNotFoundException`. |
+| No local or direct match | Discovers routes; traces one unique match only when discovery is complete. Otherwise throws `TraceRoutingException`. |
 | Connector throws an exception | Propagates the exception to the caller. |
 | Connector returns diagnostic results | Includes those results and continues traversal while its deadline permits. |
 | Cancellation | Propagates cancellation to the caller. |
 
 If a connector throws an exception, the runtime propagates it without
 returning the accumulated results.
+
+A result with `Status = Failed` is returned normally and does not stop later
+destinations from being traced while the deadline permits. Each result describes
+its own operation; the local application's status is not an aggregate health
+verdict for its dependencies.
+
+`AddPingTrace` registers logging services. Built-in connectors log each locally
+generated failure at Warning level with its destination, error code, and message,
+and attach handled exceptions. Caller cancellation is not logged as a destination
+failure. The host owns logging providers, filtering, and retention; logging
+registration alone does not store logs.
 
 The runtime does not translate exceptions into HTTP status codes. That
 responsibility belongs to the hosting integration.
@@ -285,8 +296,6 @@ TraceAll over registered connectors.
 
 It does not currently provide:
 
-- Dependency discovery.
-- Destination-path traversal.
 - Permanent application IDs.
 - Built-in `IHealthCheck` integration.
 
@@ -302,3 +311,21 @@ The registration callback is an adapter-registration callback, not an
 - [Core contracts](https://github.com/patware/Patware.PingTrace/blob/main/src/PingTrace.Core/README.md)
 - [Execution model](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/PINGTRACE.md)
 - [Connector architecture](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/PLUGIN-ARCHITECTURE.md)
+
+## Discovery and routed tracing in 0.3.0
+
+`DefaultPingTrace` also implements `IPingTraceDiscovery` and `IPingTraceRouter`.
+Resolve `IPingTrace` and check these capabilities; they are not separately
+registered as DI service types by `AddPingTrace`.
+
+Local and direct destination matches take precedence. Otherwise, named Trace
+discovers registered routes and requires complete discovery with exactly one
+distinct match. Missing, ambiguous, and incomplete resolution are separate
+`TraceRoutingException` errors. Discovery and execution share a thirty-second
+deadline, but discovery is excluded from diagnostic timings.
+
+Discovery does not execute leaf probes. It is uncached, defaults to eight hops,
+and limits reports to 256 routes and 64 issues. Explicit routed Trace executes
+only the selected path and does not reroute after failures.
+See the [routing guide](https://github.com/patware/Patware.PingTrace/blob/main/docs/architecture/DISCOVERY-AND-ROUTING.md)
+for traversal limits and response semantics.

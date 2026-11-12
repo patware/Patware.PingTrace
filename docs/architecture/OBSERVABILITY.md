@@ -264,15 +264,14 @@ A → B → D
 A → E
 ```
 
-These paths illustrate a future diagnostic workflow. The current runtime
-does not parse path expressions or automatically route through several
-applications.
+Use a `TraceRouteRequest.Segments` array for an explicit path; the runtime does
+not parse textual path expressions. Named Trace can discover an indirect route.
 
-For named destination Trace, the HTTP connector requests the immediate target's
+For direct destination Trace, the HTTP connector requests the immediate target's
 local Trace. TraceAll instead calls the remote recursive endpoint and visits
 its registered dependencies.
 
-Explicit multi-hop destination routing remains future work. TraceAll follows
+Explicit multi-hop destination routing is available in 0.3.0. TraceAll follows
 registered connectors rather than a caller-supplied destination path. Shared
 dependencies are visited per path, and parent durations include descendant work;
 do not add overlapping durations to calculate total latency.
@@ -285,7 +284,8 @@ The current flat result array alone does not describe a branching graph.
 The Aspire sample configures standard resilience for factory-created
 HTTP clients.
 
-Its PingTrace HTTP clients participate in that configuration.
+The frontend's PingTrace client removes resilience handlers and uses a five-second
+client timeout. Other clients can retain their host-configured policies.
 
 A successful destination trace may therefore include more than one
 connection attempt or other resilience behavior. The reported local

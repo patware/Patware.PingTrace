@@ -175,8 +175,9 @@ public sealed class PingTraceEndpointTests
     /// Verifies that the HTTP adapter consumes the actual endpoint response.
     /// </summary>
     /// <remarks>
-    /// Both applications run in the test process, so their entry-assembly
-    /// names are identical. Payload markers distinguish their observations.
+    /// The remote endpoint reports a different application name to verify
+    /// that the HTTP adapter applies the owner's registered destination name
+    /// while preserving the remote diagnostic evidence.
     /// </remarks>
     [TestMethod]
     public async Task HttpDestination_ConsumesRemoteEndpoint()
@@ -221,7 +222,7 @@ public sealed class PingTraceEndpointTests
         results.Should().NotBeNull();
         results!.Should().HaveCount(2);
         results[0].Payload.Should().Be($"{ApplicationVersion} --> [ApiService]");
-        results[1].Name.Should().Be("RemoteApi");
+        results[1].Name.Should().Be("ApiService");
         results[1].MachineName.Should().Be("remote-machine");
         results[1].Identity.Should().Be("remote-identity");
         results[1].Payload.Should().Be("Remote payload");

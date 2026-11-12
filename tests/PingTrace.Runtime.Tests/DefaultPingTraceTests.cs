@@ -128,7 +128,7 @@ public sealed class DefaultPingTraceTests
         Func<Task> act = () => sut.TraceAsync("Missing", TestContext.CancellationToken);
 
         // Assert
-        await act.Should().ThrowAsync<KeyNotFoundException>();
+        await act.Should().ThrowAsync<PingTrace.Core.TraceRoutingException>();
         await connector.DidNotReceive()
             .TraceAsync(Arg.Any<CancellationToken>());
     }

@@ -3,6 +3,8 @@ items:
   href: ARCHITECTURE.md
 - name: Principles
   href: ARCHITECTURAL-PRINCIPLES.md
+- name: Discovery and routing
+  href: DISCOVERY-AND-ROUTING.md
 - name: Distributed hosting
   href: DISTRIBUTED-HOSTING.md
 - name: Extensions

@@ -41,6 +41,7 @@ $libraries = @(
     'PingTrace.Adapter.EntityFramework'
     'PingTrace.Adapter.MicrosoftGraph'
     'PingTrace.Adapter.ActiveDirectory'
+    'PingTrace.Adapter.RedisCache'
 )
 
 $testProjects = @(

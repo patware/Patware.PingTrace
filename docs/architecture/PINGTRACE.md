@@ -2,8 +2,8 @@
 
 This page describes how the current default runtime processes Ping,
 local Trace, destination Trace, and recursive TraceAll requests.
-TraceAll visits explicitly registered dependencies. Local Trace and named
-destination Trace retain their existing behavior.
+TraceAll visits explicitly registered dependencies. Local Trace stays local;
+named Trace can discover an indirect destination in 0.3.0.
 
 Examples use the default `/pingtrace` route prefix and default ASP.NET Core
 JSON settings. Hosts can change the route prefix, serialization settings,
@@ -19,9 +19,12 @@ and authorization policy.
 | `GET /pingtrace/Trace?destination=DEPENDENCY_NAME` | Selected connector only | Array containing the local result followed by connector results |
 | `GET /pingtrace/TraceAll` | All registered destinations, recursively where supported | JSON array containing the local result followed by dependency results |
 | `POST /pingtrace/TraceAll` | Continues traversal using the supplied request body | The same recursive result array |
+| `GET /pingtrace/Discover` | Contacts discoverable participants; no leaf probes | Discovery report |
+| `POST /pingtrace/Discover` | Continues discovery with context | Discovery report |
+| `POST /pingtrace/TraceRoute` | Selected connector path only | JSON trace array |
 
-TraceAll is an explicit operation. It does not discover destinations or change
-the behavior of the existing Trace endpoints.
+TraceAll is separate from discovery. It executes diagnostic probes; Discover
+lists registered routes without executing leaf probes.
 
 ## Before requests arrive
 
@@ -195,7 +198,7 @@ Example successful response:
     "elapsed": "00:00:00.0250000"
   },
   {
-    "name": "AspireAppSample.ApiService",
+    "name": "WeatherApiClient",
     "identity": "EXAMPLE\\api-service",
     "machineName": "API01",
     "startedAt": "2026-10-11T10:00:00.010-04:00",
@@ -206,8 +209,8 @@ Example successful response:
 ]
 ```
 
-The local alias `WeatherApiClient` selects the connector. It does not
-replace the remote result's application name.
+The local alias `WeatherApiClient` selects the connector and replaces the first
+remote result's name. Descendant names belong to their respective owners.
 
 Only the selected connector is invoked. Other registered dependencies
 are not traced.
@@ -251,8 +254,9 @@ Supply one destination query value and URL-encode it when necessary.
 The current handler combines repeated query values into a string before
 lookup. Repeating `destination` does not request multiple traces.
 
-A destination value is not interpreted as an arbitrary URL or a discovered
-route to another application.
+A destination value is an alias, not an arbitrary URL or textual path expression.
+If it is not local or immediate, the runtime resolves it through discovery.
+Use TraceRoute with an array of segments to select an explicit path.
 
 ## Recursive TraceAll
 
@@ -447,25 +451,26 @@ local Trace.
 
 ### Unknown destination
 
-Request:
-
-```http
-GET /pingtrace/Trace?destination=Missing
-```
-
-Response status: 404.
-
-Default JSON response body:
+A destination without a local or direct match triggers discovery. Only complete
+discovery with no match produces HTTP 404 and a structured response:
 
 ```json
-"The requested destination is not known."
+{
+  "protocol": "PingTrace.Routing.v1",
+  "errorCode": "Routing.DestinationNotFound",
+  "message": "Complete discovery found no destination named 'Missing'.",
+  "candidates": [],
+  "issues": []
+}
 ```
 
-The default runtime throws `KeyNotFoundException` for an unknown name.
-The endpoint translates that exception into this response.
+Multiple routes produce HTTP 409. Incomplete discovery produces HTTP 503 unless
+multiple matches already establish ambiguity. These are `TraceRoutingException`
+failures in process. The legacy `KeyNotFoundException` catch remains for custom
+implementations and returns the older generic JSON string.
 
-The catch surrounds destination execution, so a custom connector throwing
-`KeyNotFoundException` would also be translated to 404.
+See [discovery and routing](DISCOVERY-AND-ROUTING.md) for endpoint contracts,
+resolution precedence, explicit routes, limits, and compatibility.
 
 ### Dependency failure
 

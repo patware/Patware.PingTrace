@@ -28,10 +28,10 @@ internal static class Program
         int endpointCount = routes.DataSources.Sum(
             source => source.Endpoints.Count);
 
-        if (endpointCount != 4)
+        if (endpointCount != 7)
         {
             throw new InvalidOperationException(
-                $"Expected four PingTrace endpoints; found {endpointCount}.");
+                $"Expected seven PingTrace endpoints; found {endpointCount}.");
         }
 
         using var scope = app.Services.CreateScope();

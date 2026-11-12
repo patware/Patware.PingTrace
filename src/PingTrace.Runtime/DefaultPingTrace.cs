@@ -11,7 +11,7 @@ namespace PingTrace.Runtime;
 /// Ping and local Trace do not invoke connectors. Destination Trace includes
 /// the local result followed by the selected connector's results.
 /// </remarks>
-public sealed class DefaultPingTrace : IPingTrace
+public sealed partial class DefaultPingTrace : IPingTrace, IPingTraceDiscovery, IPingTraceRouter
 {
     private readonly string _name =
         Assembly.GetEntryAssembly()?.GetName().Name
@@ -25,7 +25,7 @@ public sealed class DefaultPingTrace : IPingTrace
     /// <summary>
     /// Initializes a default implementation without dependencies.
     /// </summary>
-    public DefaultPingTrace() : this(Array.Empty<IPingTraceConnector>())
+    public DefaultPingTrace() : this([])
     {
     }
 
@@ -152,7 +152,9 @@ public sealed class DefaultPingTrace : IPingTrace
     ///
     /// The local result is completed after the dependency responds so its
     /// elapsed time includes the dependency call. Connector results retain
-    /// their own payloads. Failures and cancellation propagate to the caller.
+    /// their own payloads and outcomes. Failed diagnostic results are returned
+    /// normally. Exceptions thrown by connectors and cancellation propagate
+    /// to the caller.
     /// </remarks>
     public async Task<IReadOnlyList<TraceResult>> TraceAsync(string destination, CancellationToken cancellationToken = default)
     {
@@ -162,21 +164,19 @@ public sealed class DefaultPingTrace : IPingTrace
         if (string.Equals(destination, _name, StringComparison.OrdinalIgnoreCase))
         {
             TraceResult local = await TraceAsync(cancellationToken);
-            return new[] { local };
+            return [local];
         }
 
         if (!_connectors.TryGetValue(destination, out IPingTraceConnector? connector))
         {
-            throw new KeyNotFoundException(
-                $"Unknown trace destination '{destination}'.");
+            return await TraceDiscoveredDestinationAsync(destination, cancellationToken);
         }
 
         TraceResult current = CreateLocalResult();
 
         IReadOnlyList<TraceResult> downstream = await connector.TraceAsync(cancellationToken);
 
-        List<TraceResult> results = new() { current };
-        results.AddRange(downstream);
+        List<TraceResult> results = [current, .. downstream];
 
         var v = Assembly.GetEntryAssembly()?.GetName().Version?.ToString()
                     ?? "Pong";
@@ -215,7 +215,7 @@ public sealed class DefaultPingTrace : IPingTrace
         request.Validate();
 
         // Snapshot caller-owned traversal state before awaiting any work.
-        Guid[] ancestors = request.Ancestors.ToArray();
+        Guid[] ancestors = [.. request.Ancestors];
         int remainingDepth = request.RemainingDepth;
 
         DateTimeOffset localDeadline = DateTimeOffset.UtcNow.AddSeconds(30);
@@ -252,7 +252,7 @@ public sealed class DefaultPingTrace : IPingTrace
         }
 
         TraceResult current = CreateLocalResult();
-        List<TraceResult> results = new() { current };
+        List<TraceResult> results = [current];
 
         foreach (IPingTraceConnector connector in _connectors.Values.OrderBy(connector => connector.Name, StringComparer.OrdinalIgnoreCase))
         {
@@ -306,5 +306,82 @@ public sealed class DefaultPingTrace : IPingTrace
             MachineName = Environment.MachineName,
             Identity = $"{Environment.UserDomainName}\\{Environment.UserName}"
         };
+    }
+
+    private async Task<IReadOnlyList<TraceResult>> TraceDiscoveredDestinationAsync(string destination, CancellationToken cancellationToken)
+    {
+        // Discovery and execution share this deadline.
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+
+        DiscoveryResult discovery = await DiscoverAsync(
+            new DiscoveryRequest
+            {
+                RemainingDepth = 8,
+                DeadlineUtc = deadline
+            },
+            cancellationToken);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        List<DiscoveredRoute> matches = [];
+
+        foreach (DiscoveredRoute route in discovery.Routes)
+        {
+            if (!string.Equals(route.Destination, destination, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            bool alreadyPresent = matches.Any(existing => existing.Segments.SequenceEqual(route.Segments, StringComparer.OrdinalIgnoreCase));
+
+            if (!alreadyPresent)
+            {
+                matches.Add(new DiscoveredRoute
+                {
+                    Destination = route.Destination,
+                    Segments = [.. route.Segments]
+                });
+            }
+        }
+
+        if (matches.Count > 1)
+        {
+            throw new TraceRoutingException(new TraceRoutingError
+            {
+                Protocol = TraceRoutingError.ProtocolName,
+                ErrorCode = "Routing.AmbiguousDestination",
+                Message = $"More than one route matches destination '{destination}'.",
+                Candidates = matches,
+                Issues = discovery.Issues
+            });
+        }
+
+        if (!discovery.IsComplete)
+        {
+            throw new TraceRoutingException(new TraceRoutingError
+            {
+                Protocol = TraceRoutingError.ProtocolName,
+                ErrorCode = "Routing.DiscoveryIncomplete",
+                Message = $"Discovery could not conclusively resolve destination '{destination}'.",
+                Candidates = matches,
+                Issues = discovery.Issues
+            });
+        }
+
+        if (matches.Count == 0)
+        {
+            throw RoutingFailure(
+                errorCode: "Routing.DestinationNotFound",
+                message: $"Complete discovery found no destination named '{destination}'.");
+        }
+
+        return await TraceRouteAsync(
+            new TraceRouteRequest
+            {
+                Segments = [.. matches[0].Segments],
+                RemainingDepth = 8,
+                DeadlineUtc = deadline
+            },
+            cancellationToken);
     }
 }
