@@ -29,8 +29,15 @@ public class TraceResult
     }
 
     /// <summary>
-    /// Gets or sets the application or dependency name.
+    /// Gets or sets the owner's registered destination name,
+    /// or the application name for a local root result.
     /// </summary>
+    /// <remarks>
+    /// When an application is reached through an HTTP connector, its result
+    /// uses the destination name registered by the calling application.
+    /// Descendant names are assigned by their respective immediate owners.
+    /// Names are therefore scoped to their owner, not globally unique.
+    /// </remarks>
     public string Name { get; set; } = string.Empty;
 
     /// <summary>

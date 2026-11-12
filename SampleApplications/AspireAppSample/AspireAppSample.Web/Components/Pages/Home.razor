@@ -11,6 +11,25 @@ Welcome to your new app.
 <h2>PingTrace</h2>
 <ul>
     <li><a href="pingtrace/ping" target="_blank">Ping</a></li>
-    <li><a href="pingtrace/trace" target="_blank">Trace</a></li>
+    <li>
+        <a href="pingtrace/trace" target="_blank">Trace</a>
+        <ul>
+            <li>
+                <a href="/pingtrace/trace?destination=AspireAppSample.Web" target="_blank">Web</a>
+                <ul>
+                    <li>
+                        <a href="/pingtrace/trace?destination=WeatherApiClient" target="_blank">API</a>
+                        <ul>
+                            <li><a href="/pingtrace/trace?destination=ActiveDirectory" target="_blank">Active Directory</a></li>
+                            <li><a href="/pingtrace/trace?destination=ApiServiceDb" target="_blank">Db</a></li>
+                            <li><a href="/pingtrace/trace?destination=MicrosoftGraph" target="_blank">MS Graph</a></li>
+                        </ul>
+                    </li>
+                    <li><a href="/pingtrace/trace?destination=RedisCache" target="_blank">Redis Cache</a></li>
+                </ul>
+            </li>
+        </ul>
+    </li>
     <li><a href="pingtrace/traceall" target="_blank">Trace All</a></li>
+    <li><a href="pingtrace/discover" target="_blank">Discover</a></li>
 </ul>

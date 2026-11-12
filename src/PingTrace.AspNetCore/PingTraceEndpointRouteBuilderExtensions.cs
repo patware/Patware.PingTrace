@@ -13,7 +13,7 @@ namespace PingTrace.AspNetCore;
 public static class PingTraceEndpointRouteBuilderExtensions
 {
     /// <summary>
-    /// Maps Ping, Trace, and TraceAll endpoints under a common prefix.
+    /// Maps Ping, Trace, TraceAll, and Discover endpoints under a common prefix.
     /// </summary>
     /// <param name="endpoints">The endpoint route builder.</param>
     /// <param name="prefix">The common route prefix.</param>
@@ -23,6 +23,9 @@ public static class PingTraceEndpointRouteBuilderExtensions
     /// plus a POST endpoint for continuing recursive traversal.
     /// Applying authorization to the group protects all mapped operations.
     /// The host owns authentication and exception handling.
+    /// Discovery reports registered destinations without executing leaf probes.
+    /// Incomplete discovery returns a report containing branch issues.
+    /// Applying authorization to the group also protects discovery endpoints.
     /// </remarks>
     public static RouteGroupBuilder MapPingTrace(this IEndpointRouteBuilder endpoints, string prefix = "/pingtrace")
     {
@@ -35,6 +38,9 @@ public static class PingTraceEndpointRouteBuilderExtensions
         group.MapGet("/Trace", HandleTraceAsync);
         group.MapGet("/TraceAll", HandleTraceAllAsync);
         group.MapPost("/TraceAll", HandleRecursiveTraceAllAsync);
+        group.MapGet("/Discover", HandleDiscoverAsync);
+        group.MapPost("/Discover", HandleRecursiveDiscoverAsync);
+        group.MapPost("/TraceRoute", HandleTraceRouteAsync);
 
         return group;
 
@@ -69,6 +75,10 @@ public static class PingTraceEndpointRouteBuilderExtensions
             IReadOnlyList<TraceResult> results = await pingTrace.TraceAsync(destination, cancellationToken);
 
             return Results.Ok(results);
+        }
+        catch (TraceRoutingException exception)
+        {
+            return RoutingErrorResult(exception.Error);
         }
         catch (KeyNotFoundException)
         {
@@ -107,4 +117,113 @@ public static class PingTraceEndpointRouteBuilderExtensions
         return Results.Ok(results);
     }
 
+    private static async Task<IResult> HandleDiscoverAsync(
+        HttpContext context,
+        [FromServices] IPingTrace pingTrace)
+    {
+        if (pingTrace is not IPingTraceDiscovery discovery)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status501NotImplemented,
+                title: "This PingTrace implementation does not support discovery.");
+        }
+
+        DiscoveryResult result = await discovery.DiscoverAsync(cancellationToken: context.RequestAborted);
+
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> HandleRecursiveDiscoverAsync(
+        HttpContext context,
+        [FromServices] IPingTrace pingTrace,
+        [FromBody] DiscoveryRequest request)
+    {
+        if (request is null)
+        {
+            return Results.BadRequest("A discovery request is required.");
+        }
+
+        try
+        {
+            request.Validate();
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest("The discovery request is invalid.");
+        }
+
+        if (pingTrace is not IPingTraceDiscovery discovery)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status501NotImplemented,
+                title: "This PingTrace implementation does not support discovery.");
+        }
+
+        DiscoveryResult result = await discovery.DiscoverAsync(request, context.RequestAborted);
+
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> HandleTraceRouteAsync(
+        HttpContext context,
+        [FromServices] IPingTrace pingTrace,
+        [FromBody] TraceRouteRequest request)
+    {
+        if (request is null)
+        {
+            return Results.BadRequest("A route request is required.");
+        }
+
+        try
+        {
+            request.Validate();
+        }
+        catch (ArgumentException)
+        {
+            return Results.BadRequest("The route request is invalid.");
+        }
+
+        if (pingTrace is not IPingTraceRouter router)
+        {
+            return RoutingErrorResult(new TraceRoutingError
+            {
+                Protocol = TraceRoutingError.ProtocolName,
+                ErrorCode = "Routing.ForwardingNotSupported",
+                Message = "This PingTrace implementation does not support routed tracing."
+            });
+        }
+
+        try
+        {
+            IReadOnlyList<TraceResult> results = await router.TraceRouteAsync(request, context.RequestAborted);
+
+            return Results.Ok(results);
+        }
+        catch (TraceRoutingException exception)
+        {
+            return RoutingErrorResult(exception.Error);
+        }
+    }
+
+    private static IResult RoutingErrorResult(TraceRoutingError error)
+    {
+        int statusCode = error.ErrorCode switch
+        {
+            "Routing.DestinationNotFound" or
+            "Routing.SegmentNotRegistered" =>
+                StatusCodes.Status404NotFound,
+
+            "Routing.AmbiguousDestination" or
+            "Routing.Cycle" =>
+                StatusCodes.Status409Conflict,
+
+            "Routing.DiscoveryIncomplete" => StatusCodes.Status503ServiceUnavailable,
+
+            "Routing.ForwardingNotSupported" => StatusCodes.Status501NotImplemented,
+
+            _ => StatusCodes.Status500InternalServerError
+        };
+
+        return Results.Json(error, statusCode: statusCode);
+    }
 }

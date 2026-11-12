@@ -28,11 +28,13 @@ builder.Services.AddHttpClient<WeatherApiClient>(client =>
 builder.Services.AddPingTrace(pingTrace =>
 {
 #pragma warning disable EXTEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
-    pingTrace.AddHttpDestination("WeatherApiClient", client =>
-    {
-        client.BaseAddress = apiServiceUri;
-        client.Timeout = TimeSpan.FromSeconds(5);
-    })
+    pingTrace.AddHttpDestination(
+        name: "WeatherApiClient",
+        configureClient: client =>
+            {
+                client.BaseAddress = apiServiceUri;
+                client.Timeout = TimeSpan.FromSeconds(5);
+            })
     .RemoveAllResilienceHandlers();
 #pragma warning restore EXTEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 

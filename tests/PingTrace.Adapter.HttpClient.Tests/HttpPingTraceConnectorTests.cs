@@ -31,10 +31,17 @@ public sealed class HttpPingTraceConnectorTests
     public TestContext TestContext { get; set; } = null!;
 
     /// <summary>
-    /// Verifies independent HTTP clients and preservation of remote names.
+    /// Verifies independent HTTP clients and preservation of registered names.
     /// </summary>
+    /// <param name="recursive">Whether to trace both destinations recursively.</param>
+    /// <remarks>
+    /// Both instances report the same application name. Their owner's aliases
+    /// must distinguish them regardless of the operation or lookup casing.
+    /// </remarks>
     [TestMethod]
-    public async Task MultipleDestinations_UseTheirOwnClients()
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task MultipleDestinations_UseTheirOwnClients(bool recursive)
     {
         // Arrange
         ServiceCollection services = new();
@@ -49,9 +56,11 @@ public sealed class HttpPingTraceConnectorTests
                 new StubHandler((request, _) =>
                 {
                     requests.Add(request.RequestUri!.AbsoluteUri);
-                    request.Method.Should().Be(HttpMethod.Get);
+                    request.Method.Should().Be(recursive ? HttpMethod.Post : HttpMethod.Get);
                     return Task.FromResult(JsonResponse(
-                        """{"name":"FirstRemote","payload":"one"}"""));
+                        recursive
+                            ? """[{"name":"SharedRemote","payload":"one"}]"""
+                            : """{"name":"SharedRemote","payload":"one"}"""));
                 }));
 
             builder.AddHttpDestination("Second", client =>
@@ -61,8 +70,11 @@ public sealed class HttpPingTraceConnectorTests
                 new StubHandler((request, _) =>
                 {
                     requests.Add(request.RequestUri!.AbsoluteUri);
+                    request.Method.Should().Be(recursive ? HttpMethod.Post : HttpMethod.Get);
                     return Task.FromResult(JsonResponse(
-                        """{"name":"SecondRemote","payload":"two"}"""));
+                        recursive
+                            ? """[{"name":"SharedRemote","payload":"two"}]"""
+                            : """{"name":"SharedRemote","payload":"two"}"""));
                 }));
         });
 
@@ -71,21 +83,39 @@ public sealed class HttpPingTraceConnectorTests
         IPingTrace sut = scope.ServiceProvider.GetRequiredService<IPingTrace>();
 
         // Act
-        IReadOnlyList<TraceResult> first = await sut.TraceAsync("FIRST", TestContext.CancellationToken);
-        IReadOnlyList<TraceResult> second = await sut.TraceAsync("Second", TestContext.CancellationToken);
+        IReadOnlyList<TraceResult> first;
+        IReadOnlyList<TraceResult> second;
+        IReadOnlyList<TraceResult>? allResults = null;
+        if (recursive)
+        {
+            allResults = await sut.TraceAllAsync(
+                cancellationToken: TestContext.CancellationToken);
+            first = allResults.Take(2).ToArray();
+            second = allResults.Where((_, index) => index != 1).ToArray();
+        }
+        else
+        {
+            first = await sut.TraceAsync("FIRST", TestContext.CancellationToken);
+            second = await sut.TraceAsync("Second", TestContext.CancellationToken);
+        }
 
         // Assert
+        if (recursive)
+        {
+            allResults.Should().HaveCount(3);
+        }
+
         requests.Should().Equal(
-            "https://first.test/pingtrace/Trace",
-            "https://second.test/pingtrace/Trace");
+            recursive ? "https://first.test/pingtrace/TraceAll" : "https://first.test/pingtrace/Trace",
+            recursive ? "https://second.test/pingtrace/TraceAll" : "https://second.test/pingtrace/Trace");
 
         first.Should().HaveCount(2);
-        first[1].Name.Should().Be("FirstRemote");
+        first[1].Name.Should().Be("First");
         first[1].Payload.Should().Be("one");
         first[1].Status.Should().Be(TraceStatus.Unknown);
 
         second.Should().HaveCount(2);
-        second[1].Name.Should().Be("SecondRemote");
+        second[1].Name.Should().Be("Second");
         second[1].Payload.Should().Be("two");
     }
 
@@ -380,7 +410,7 @@ public sealed class HttpPingTraceConnectorTests
             "HTTP communication failed (Unknown).");
         results[1].FinishedAt.Should().NotBe(default);
 
-        results[2].Name.Should().Be("RemoteApi");
+        results[2].Name.Should().Be("B-Available");
         results[2].Payload.Should().Be("healthy");
     }
 
@@ -633,7 +663,7 @@ public sealed class HttpPingTraceConnectorTests
         observedRequest.DeadlineUtc.Should().Be(request.DeadlineUtc);
 
         results.Skip(1).Select(result => result.Name)
-            .Should().Equal("RemoteApi", "Database");
+            .Should().Equal("ApiService", "Database");
         results.Skip(1).Select(result => result.Payload)
             .Should().Equal("api", "db");
 
@@ -701,9 +731,81 @@ public sealed class HttpPingTraceConnectorTests
 
         // Assert
         results.Should().HaveCount(2);
-        results[1].Should().BeEquivalentTo(remote);
+        results[1].Name.Should().Be("ApiService");
+        results[1].Should().BeEquivalentTo(
+            remote, options => options.Excluding(result => result.Name));
         results[0].Status.Should().Be(TraceStatus.Succeeded);
         logs.Warnings.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Verifies that routed tracing assigns the owner's alias only to the
+    /// remote root and preserves diagnostic evidence throughout the response.
+    /// </summary>
+    /// <param name="remoteFailed">Whether the remote root reports a failure.</param>
+    /// <remarks>
+    /// The descendant belongs to the remote owner and must not inherit the
+    /// caller's alias. Renaming must preserve both successful and failed outcomes.
+    /// </remarks>
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public async Task TraceRoute_UsesRegisteredNameAndPreservesDescendant(bool remoteFailed)
+    {
+        // Arrange
+        TraceResult remote = new()
+        {
+            Name = "RemoteApplication",
+            Identity = "remote-identity",
+            MachineName = "remote-machine",
+            Payload = "remote evidence"
+        };
+        if (remoteFailed)
+        {
+            remote.Fail(TraceFailureKind.Authentication, "Remote.Auth", "Authentication failed.");
+        }
+        else
+        {
+            remote.Finish("remote evidence");
+        }
+
+        TraceResult descendant = new()
+        {
+            Name = "Database",
+            Identity = "database-identity",
+            MachineName = "database-machine"
+        };
+        descendant.Finish("database evidence");
+
+        HttpMethod? observedMethod = null;
+        Uri? observedUri = null;
+        TraceRouteRequest? observedRequest = null;
+        using ServiceProvider provider = CreateProvider(async (message, token) =>
+        {
+            observedMethod = message.Method;
+            observedUri = message.RequestUri;
+            observedRequest = await message.Content!.ReadFromJsonAsync<TraceRouteRequest>(
+                cancellationToken: token);
+            return JsonResponse(JsonSerializer.Serialize(new[] { remote, descendant }));
+        });
+        using IServiceScope scope = provider.CreateScope();
+        IPingTraceRouter sut = (IPingTraceRouter)scope.ServiceProvider.GetRequiredService<IPingTrace>();
+        TraceRouteRequest request = new() { Segments = ["APISERVICE", "Database"] };
+
+        // Act
+        IReadOnlyList<TraceResult> results = await sut.TraceRouteAsync(
+            request, TestContext.CancellationToken);
+
+        // Assert
+        observedMethod.Should().Be(HttpMethod.Post);
+        observedUri.Should().Be(new Uri("https://remote.test/pingtrace/TraceRoute"));
+        observedRequest.Should().NotBeNull();
+        observedRequest!.Segments.Should().Equal("Database");
+        results.Should().HaveCount(3);
+        results[1].Name.Should().Be("ApiService");
+        results[1].Should().BeEquivalentTo(
+            remote, options => options.Excluding(result => result.Name));
+        results[2].Should().BeEquivalentTo(descendant);
     }
 
     private static ServiceProvider CreateProvider(

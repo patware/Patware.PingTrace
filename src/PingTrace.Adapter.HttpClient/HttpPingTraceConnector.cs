@@ -25,13 +25,15 @@ namespace PingTrace.Adapter.HttpClient;
 /// Remote diagnostic outcomes are preserved. Successful HTTP transport
 /// does not establish that the remote diagnostic operation succeeded.
 /// </remarks>
-internal sealed class HttpPingTraceConnector : IPingTraceConnector, IRecursivePingTraceConnector
+internal sealed partial class HttpPingTraceConnector : IPingTraceConnector, IRecursivePingTraceConnector, IDiscoverablePingTraceConnector, IRoutedPingTraceConnector
 {
     private readonly IHttpClientFactory _clientFactory;
     private readonly string _httpClientName;
     private readonly string _tracePath;
     private readonly string _traceAllPath;
     private readonly ILogger<HttpPingTraceConnector> _logger;
+    private readonly string _discoverPath;
+    private readonly string _traceRoutePath;
 
     internal HttpPingTraceConnector(
         string name,
@@ -39,7 +41,10 @@ internal sealed class HttpPingTraceConnector : IPingTraceConnector, IRecursivePi
         string httpClientName,
         string tracePath,
         string traceAllPath,
-        ILogger<HttpPingTraceConnector> logger)
+        ILogger<HttpPingTraceConnector> logger,
+        string discoverPath = "/pingtrace/Discover",
+        string traceRoutePath = "/pingtrace/TraceRoute"
+        )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentNullException.ThrowIfNull(clientFactory);
@@ -47,6 +52,8 @@ internal sealed class HttpPingTraceConnector : IPingTraceConnector, IRecursivePi
         ArgumentException.ThrowIfNullOrWhiteSpace(tracePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(traceAllPath);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentException.ThrowIfNullOrWhiteSpace(discoverPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(traceRoutePath);
 
         Name = name;
         _clientFactory = clientFactory;
@@ -54,6 +61,8 @@ internal sealed class HttpPingTraceConnector : IPingTraceConnector, IRecursivePi
         _tracePath = tracePath;
         _traceAllPath = traceAllPath;
         _logger = logger;
+        _discoverPath = discoverPath;
+        _traceRoutePath = traceRoutePath;
     }
 
     /// <inheritdoc />
@@ -119,6 +128,11 @@ internal sealed class HttpPingTraceConnector : IPingTraceConnector, IRecursivePi
     ///
     /// Successful HTTP transport does not change the outcomes reported by
     /// the remote destination, including an Unknown outcome from older peers.
+    ///
+    /// The first remote result represents the immediate destination and
+    /// receives the name configured by its owner. Descendant names remain
+    /// those assigned by their respective owners. This distinguishes
+    /// separately registered instances of the same remote application.
     /// </remarks>
     private async Task<IReadOnlyList<TraceResult>> ExecuteAsync(
         Func<NetHttpClient, CancellationToken, Task<IReadOnlyList<TraceResult>>> operation,
@@ -159,6 +173,10 @@ internal sealed class HttpPingTraceConnector : IPingTraceConnector, IRecursivePi
             IReadOnlyList<TraceResult> results = await operation(client, cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
+
+            // The first result represents this connector's immediate destination.
+            // Descendant names belong to their respective owners.
+            results[0].Name = Name;
 
             return results;
         }

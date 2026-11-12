@@ -28,8 +28,7 @@ var connectionString = builder.Configuration.GetConnectionString("ApiService");
 
 if (string.IsNullOrWhiteSpace(connectionString))
 {
-    throw new InvalidOperationException(
-        "Connection string 'ApiService' is missing or empty.");
+    throw new InvalidOperationException("Connection string 'ApiService' is missing or empty.");
 }
 
 builder.Services.AddDbContext<ApiServiceDbContext>(options =>
