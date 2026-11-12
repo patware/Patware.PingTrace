@@ -3,6 +3,12 @@
 User-visible changes are recorded here. `VERSION` is the current build version;
 published releases are identified by package and release date below.
 
+## 0.3.1 - 2026.11.11
+
+### Fix
+
+- Release pipeline missing publishing of Adapter.RedisCache
+
 ## 0.3.0 - 2026.11.11
 
 ### Added
